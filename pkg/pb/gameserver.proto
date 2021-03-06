@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package gameserver;
+
+option go_package = "github.com/amikhailau/medieval-game-server/pkg/pb;pb";
+
+import "google/protobuf/timestamp.proto";
+
+enum EquipmentItemType {
+    HELMET = 0;
+    ARMOR = 1;
+    WEAPON = 2;
+}
+
+enum EquipmentItemRarity {
+    DEFAULT = 0;
+    COMMON = 1;
+    UNCOMMON = 2;
+    RARE = 3;
+    EPIC = 4;
+    LEGENDARY = 5;
+}
+
+message WeaponCharacteristics {
+    int32 attack_power = 1;
+    float range = 2;
+    float attack_cone = 3;
+    float knockback_power = 4;
+}
+
+message EquipmentItem {
+    EquipmentItemType type = 1;
+    EquipmentItemRarity rarity = 2;
+    oneof characteristics {
+        WeaponCharacteristics weapon_chars = 3;
+        int32 hp_buff = 4;
+        int32 damage_reduction = 5;
+    }
+    int32 item_id = 6;
+}
+
+message DroppedEquipmentItem {
+    Vector position = 1;
+    EquipmentItem item = 2;
+}
+
+message PlayerEquipment {
+    EquipmentItem helmet = 1;
+    EquipmentItem armor = 2;
+    EquipmentItem weapon = 3;
+}
+
+message Vector {
+    float x = 1;
+    float y = 2;
+}
+
+message Player {
+    string nickname = 1;
+    int32 hp = 2;
+    PlayerEquipment equipment = 3;
+    string user_id = 4;
+    Vector position = 5;
+    float angle = 6;
+    int32 player_id = 7;
+}
+
+message GameState {
+    repeated Player players = 1;
+    repeated DroppedEquipmentItem dropped_items = 2;
+}
+
+message Action {
+    oneof action {
+        MovementAction move = 1;
+        AttackAction attack = 2;
+        PickUpAction pick_up = 3;
+        DropAction drop = 4;
+    }
+}
+
+message MovementAction {
+    Vector shift = 1;
+    float angle = 2;
+}
+
+message PickUpAction {
+    int32 item_id = 1;
+}
+
+message DropAction {
+    EquipmentItemType slot = 1;
+}
+
+message AttackAction {
+
+}
