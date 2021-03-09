@@ -21,6 +21,11 @@ enum EquipmentItemRarity {
     LEGENDARY = 5;
 }
 
+enum NotificationType {
+    CONNECT = 0;
+    DISCONNECT = 1;
+}
+
 message WeaponCharacteristics {
     int32 attack_power = 1;
     float range = 2;
@@ -94,4 +99,31 @@ message DropAction {
 
 message AttackAction {
 
+}
+
+message ConnectRequest {
+    string user_id = 1;
+    google.protobuf.Timestamp local_time = 2;
+}
+
+message ConnectResponse {
+    int32 ping = 1;
+    string token = 2;
+    google.protobuf.Timestamp server_time = 3;
+}
+
+message Notification {
+    NotificationType type = 1;
+}
+
+message ClientMessage {
+    oneof message {
+        Action action = 1;
+        Notification notification = 2;
+    }
+}
+
+service GameManager {
+    rpc Connect (ConnectRequest) returns (ConnectResponse) {}
+    rpc Talk(stream ClientMessage) returns (stream GameState) {}
 }

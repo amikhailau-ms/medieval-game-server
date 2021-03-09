@@ -38,8 +38,14 @@ func (x *Vector) Deepcopy() *Vector {
 }
 
 func (x *DroppedEquipmentItem) Deepcopy() *DroppedEquipmentItem {
-	newEquipmentInfo := x.Item.Deepcopy()
-	newPosition := x.Position.Deepcopy()
+	var newEquipmentInfo *EquipmentItem
+	var newPosition *Vector
+	if x.Item != nil {
+		newEquipmentInfo = x.Item.Deepcopy()
+	}
+	if x.Position != nil {
+		newPosition = x.Position.Deepcopy()
+	}
 	droppedEquipmentItem := DroppedEquipmentItem{
 		Item:     newEquipmentInfo,
 		Position: newPosition,
@@ -48,9 +54,18 @@ func (x *DroppedEquipmentItem) Deepcopy() *DroppedEquipmentItem {
 }
 
 func (x *PlayerEquipment) Deepcopy() *PlayerEquipment {
-	newHelmet := x.Helmet.Deepcopy()
-	newArmor := x.Armor.Deepcopy()
-	newWeapon := x.Weapon.Deepcopy()
+	var newHelmet *EquipmentItem
+	var newArmor *EquipmentItem
+	var newWeapon *EquipmentItem
+	if x.Helmet != nil {
+		newHelmet = x.Helmet.Deepcopy()
+	}
+	if x.Armor != nil {
+		newArmor = x.Armor.Deepcopy()
+	}
+	if x.Weapon != nil {
+		newWeapon = x.Weapon.Deepcopy()
+	}
 	playerEquipment := PlayerEquipment{
 		Helmet: newHelmet,
 		Armor:  newArmor,
@@ -60,8 +75,14 @@ func (x *PlayerEquipment) Deepcopy() *PlayerEquipment {
 }
 
 func (x *Player) Deepcopy() *Player {
-	newEquipment := x.Equipment.Deepcopy()
-	newPosition := x.Position.Deepcopy()
+	var newEquipment *PlayerEquipment
+	if x.Equipment != nil {
+		newEquipment = x.Equipment.Deepcopy()
+	}
+	var newPosition *Vector
+	if x.Position != nil {
+		newPosition = x.Position.Deepcopy()
+	}
 	player := Player{
 		Nickname:  x.Nickname,
 		Hp:        x.Hp,

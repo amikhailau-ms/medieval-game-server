@@ -7,16 +7,17 @@ import (
 	"github.com/amikhailau/medieval-game-server/pkg/pb"
 )
 
-func (g *GameSession) DoSessionTick() {
+func (g *GameSession) DoSessionTick() bool {
 	g.Lock()
 	defer g.Unlock()
 
 	sortedPlayers := make([]SortedPlayer, 0, g.cfg.PlayerCount)
 	players := make([]*pb.Player, 0, g.cfg.PlayerCount)
 	items := make([]*pb.DroppedEquipmentItem, 0, g.cfg.PlayerCount)
-	for _, player := range g.gameState.players {
-		minGotYou := player.playerInfo.Position.X - g.cfg.PlayerRadius
-		maxGotYou := player.playerInfo.Position.X + g.cfg.PlayerRadius
+	playersAlive := 0
+	for _, player := range g.GameState.Players {
+		minGotYou := player.PlayerInfo.Position.X - g.cfg.PlayerRadius
+		maxGotYou := player.PlayerInfo.Position.X + g.cfg.PlayerRadius
 		intervals := make(map[int]bool)
 
 		for _, sEntity := range g.sortedEntities {
@@ -24,35 +25,51 @@ func (g *GameSession) DoSessionTick() {
 				break
 			}
 			if sEntity.value < minGotYou {
+				if sEntity.start {
+					intervals[sEntity.entityId] = true
+				} else {
+					intervals[sEntity.entityId] = false
+				}
 				continue
 			}
 			intervals[sEntity.entityId] = true
 		}
 
-		playerBody := collision2d.NewCircle(collision2d.NewVector(float64(player.playerInfo.Position.X), float64(player.playerInfo.Position.Y)),
+		playerBody := collision2d.NewCircle(collision2d.NewVector(float64(player.PlayerInfo.Position.X), float64(player.PlayerInfo.Position.Y)),
 			float64(g.cfg.PlayerRadius))
 
-		for entityId := range intervals {
-			areColliding, _ := collision2d.TestCirclePolygon(playerBody, g.unmovableEntities[entityId])
-			if !areColliding {
+		for entityId, in := range intervals {
+			if !in {
 				continue
 			}
-			player.playerInfo.Position.X = g.prevGameStates[g.cfg.GameStatesSaved-1].players[int(player.playerInfo.PlayerId)].Position.X
-			player.playerInfo.Position.Y = g.prevGameStates[g.cfg.GameStatesSaved-1].players[int(player.playerInfo.PlayerId)].Position.Y
+			_, info := collision2d.TestPolygonCircle(g.unmovableEntities[entityId], playerBody)
+			if info.Overlap < 0 {
+				continue
+			}
+			player.PlayerInfo.Position.X = g.PrevGameStates[g.cfg.GameStatesSaved-1].Players[int(player.PlayerInfo.PlayerId)].Position.X
+			player.PlayerInfo.Position.Y = g.PrevGameStates[g.cfg.GameStatesSaved-1].Players[int(player.PlayerInfo.PlayerId)].Position.Y
 			break
 		}
-		sortedPlayers = append(sortedPlayers, SortedPlayer{playerId: player.playerInfo.PlayerId, value: minGotYou, start: true},
-			SortedPlayer{playerId: player.playerInfo.PlayerId, value: maxGotYou, start: false})
-		players = append(players, player.playerInfo.Deepcopy())
+		if player.PlayerInfo.Hp > 0 {
+			playersAlive++
+		}
+		sortedPlayers = append(sortedPlayers, SortedPlayer{playerId: player.PlayerInfo.PlayerId, value: minGotYou, start: true},
+			SortedPlayer{playerId: player.PlayerInfo.PlayerId, value: maxGotYou, start: false})
+		players = append(players, player.PlayerInfo.Deepcopy())
 	}
+
+	if playersAlive < 2 {
+		return true
+	}
+
 	sort.SliceStable(sortedPlayers, func(i, j int) bool { return sortedPlayers[i].value < sortedPlayers[j].value })
 
-	for _, item := range g.gameState.items {
-		items = append(items, item.itemInfo.Deepcopy())
+	for _, item := range g.GameState.Items {
+		items = append(items, item.ItemInfo.Deepcopy())
 	}
 
-	newPrevGameState := PrevGameState{sortedPlayers: sortedPlayers, players: players, items: items}
-	g.prevGameStates = g.prevGameStates[1:]
-	g.prevGameStates = append(g.prevGameStates, newPrevGameState)
-	return
+	newPrevGameState := PrevGameState{SortedPlayers: sortedPlayers, Players: players, Items: items}
+	g.PrevGameStates = g.PrevGameStates[1:]
+	g.PrevGameStates = append(g.PrevGameStates, newPrevGameState)
+	return false
 }
