@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"encoding/hex"
+	"log"
 	"sync"
 	"time"
 
@@ -31,7 +32,7 @@ type ClientConnection struct {
 }
 
 type GameManager struct {
-	GameManager pb.UnimplementedGameManagerServer
+	pb.UnimplementedGameManagerServer
 	FinishChan  chan bool
 	gs          *gamesession.GameSession
 	cfg         *GameManagerConfig
@@ -73,6 +74,7 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 
 		for {
 			endGame := gs.DoSessionTick()
+			go gm.BroadcastGameState()
 			if endGame {
 				break
 			}
@@ -113,6 +115,7 @@ func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb
 	}
 
 	ping := int32(float64(receiveTime.Nanosecond()-clientTime.Nanosecond()) / 1000000)
+	log.Printf("Player with user id %v has registered\n", userId)
 
 	gm.Lock()
 	defer gm.Unlock()
@@ -133,7 +136,6 @@ func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb
 	}, nil
 }
 
-//WHAT ABOUT THE OTHER ONE?
 func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 	ctx := srv.Context()
 
@@ -160,8 +162,20 @@ func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 		}
 
 		if not := req.GetNotification(); not != nil {
-			if not.Type == pb.NotificationType_DISCONNECT {
+			switch not.Type {
+			case pb.NotificationType_DISCONNECT:
+				log.Printf("Player with user id %v has disconnected\n", client.userId)
+				go gm.BroadcastNotification(&pb.ServerNotification{
+					Type:  pb.ServerNotificationType_PLAYER_DISCONNECTED,
+					Actor: client.nickname,
+				})
 				client.done <- status.Error(codes.Aborted, "client requested disconnect")
+			case pb.NotificationType_CONNECT:
+				log.Printf("Player with user id %v has connected\n", client.userId)
+				go gm.BroadcastNotification(&pb.ServerNotification{
+					Type:  pb.ServerNotificationType_PLAYER_CONNECTED,
+					Actor: client.nickname,
+				})
 			}
 		}
 
@@ -188,4 +202,36 @@ func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 
 func (gm *GameManager) SendResults() {
 	//NEED TO ADD STATS TO THE GAME
+}
+
+func (gm *GameManager) BroadcastNotification(not *pb.ServerNotification) {
+	for _, client := range gm.clients {
+		if client.streamServer == nil {
+			continue
+		}
+		if err := client.streamServer.Send(&pb.ServerResponse{Info: &pb.ServerResponse_Notification{Notification: not}}); err != nil {
+			log.Printf("user{id: %v, playerId: %v, nickname: %v} - unable to reach: %v\n", client.userId, client.playerId, client.nickname, err)
+			client.done <- err
+			continue
+		}
+		log.Printf("user{id: %v, playerId: %v, nickname: %v} - received notication: %v\n", client.userId, client.playerId, client.nickname, &not)
+	}
+}
+
+func (gm *GameManager) BroadcastGameState() {
+	newGameState := &pb.GameState{
+		Players:      gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack+1].Players,
+		DroppedItems: gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack+1].Items,
+	}
+	for _, client := range gm.clients {
+		if client.streamServer == nil {
+			continue
+		}
+		if err := client.streamServer.Send(&pb.ServerResponse{Info: &pb.ServerResponse_GameState{GameState: newGameState}}); err != nil {
+			log.Printf("user{id: %v, playerId: %v, nickname: %v} - unable to reach: %v\n", client.userId, client.playerId, client.nickname, err)
+			client.done <- err
+			continue
+		}
+		log.Printf("user{id: %v, playerId: %v, nickname: %v} - received game state\n", client.userId, client.playerId, client.nickname)
+	}
 }

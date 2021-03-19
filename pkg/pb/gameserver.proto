@@ -26,6 +26,13 @@ enum NotificationType {
     DISCONNECT = 1;
 }
 
+enum ServerNotificationType {
+    PLAYER_CONNECTED = 0;
+    PLAYER_DISCONNECTED = 1;
+    PLAYER_KILLED = 2;
+    PLAYER_ATTACKED = 3;
+}
+
 message WeaponCharacteristics {
     int32 attack_power = 1;
     float range = 2;
@@ -123,7 +130,20 @@ message ClientMessage {
     }
 }
 
+message ServerNotification {
+    ServerNotificationType type = 1;
+    string actor = 2;
+    string receiver = 3;
+}
+
+message ServerResponse {
+    oneof info {
+        ServerNotification notification = 1;
+        GameState game_state = 2;
+    }
+}
+
 service GameManager {
     rpc Connect (ConnectRequest) returns (ConnectResponse) {}
-    rpc Talk(stream ClientMessage) returns (stream GameState) {}
+    rpc Talk(stream ClientMessage) returns (stream ServerResponse) {}
 }

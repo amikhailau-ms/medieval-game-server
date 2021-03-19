@@ -11,6 +11,7 @@ const (
 	defaultPlayerDropRange     = 15
 	defaultPlayerRadius        = 5
 	defaultMapFilePath         = "test/testmap.json"
+	defaultPortToAcceptConns   = 9979
 )
 
 var (
@@ -22,4 +23,5 @@ var (
 	flagPlayerDropRange     = pflag.Float32("gamesession.player.drop", defaultPlayerDropRange, "range of player item drop")
 	flagPlayerRadius        = pflag.Int("gamesession.player.radius", defaultPlayerRadius, "radius of player model")
 	flagMapFilePath         = pflag.String("gamemanager.map.file", defaultMapFilePath, "path to map description")
+	flagPortToAcceptConns   = pflag.Int("gameserver.port", defaultPortToAcceptConns, "port to expose to clients")
 )
