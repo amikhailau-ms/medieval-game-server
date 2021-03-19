@@ -10,10 +10,15 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/amikhailau/medieval-game-server/pkg/gamesession"
 	"github.com/amikhailau/medieval-game-server/pkg/pb"
+)
+
+const (
+	UserIDMetadata = "User-ID"
 )
 
 type GameManagerConfig struct {
@@ -90,19 +95,19 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb.ConnectResponse, error) {
 	receiveTime := time.Now()
 
-	userIdInterface := ctx.Value("User-ID")
-	if userIdInterface == nil {
-		return nil, status.Error(codes.Unauthenticated, "No user id set")
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "Unable to retrieve metadata")
 	}
 
-	userId, ok := userIdInterface.(string)
-	if !ok {
-		return nil, status.Error(codes.InvalidArgument, "Incorrect user id value")
+	userId := md.Get(UserIDMetadata)
+	if len(userId) < 1 {
+		return nil, status.Error(codes.InvalidArgument, "No user id value set")
 	}
 	//CHECK THAT THIS USER BELONGS TO THIS SESSION?
 
 	h := sha512.New()
-	h.Write([]byte(userId + time.Now().String()))
+	h.Write([]byte(userId[0] + time.Now().String()))
 	clientToken := hex.EncodeToString(h.Sum(nil))
 
 	clientTime, err := ptypes.Timestamp(req.LocalTime)
@@ -123,7 +128,7 @@ func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb
 	newClient := &ClientConnection{
 		lastSeen: receiveTime,
 		playerId: int32(gm.clientCount),
-		userId:   userId,
+		userId:   userId[0],
 		token:    clientToken,
 		done:     make(chan error),
 	}
