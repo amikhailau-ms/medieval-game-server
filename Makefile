@@ -19,7 +19,7 @@ docker-build:
 .PHONY: docker
 docker: .docker-$(IMAGE_NAME)-$(IMAGE_VERSION)
 
-docker-push:
+docker-push: docker
 	@docker push $(SERVER_IMAGE):$(IMAGE_VERSION)
 
 .push-$(IMAGE_NAME)-$(IMAGE_VERSION):
