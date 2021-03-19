@@ -9,6 +9,7 @@ import (
 	"github.com/amikhailau/medieval-game-server/pkg/pb"
 	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -30,7 +31,10 @@ func main() {
 	}
 
 	client := pb.NewGameManagerClient(conn)
-	ctx := context.WithValue(context.Background(), UserIDHeader, TestUserID)
+	ctx := metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.Pairs(UserIDHeader, TestUserID),
+	)
 	resp, err := client.Connect(ctx, &pb.ConnectRequest{
 		UserId:    TestUserID,
 		LocalTime: ptypes.TimestampNow(),
