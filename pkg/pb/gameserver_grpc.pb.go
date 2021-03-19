@@ -50,7 +50,7 @@ func (c *gameManagerClient) Talk(ctx context.Context, opts ...grpc.CallOption) (
 
 type GameManager_TalkClient interface {
 	Send(*ClientMessage) error
-	Recv() (*GameState, error)
+	Recv() (*ServerResponse, error)
 	grpc.ClientStream
 }
 
@@ -62,8 +62,8 @@ func (x *gameManagerTalkClient) Send(m *ClientMessage) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *gameManagerTalkClient) Recv() (*GameState, error) {
-	m := new(GameState)
+func (x *gameManagerTalkClient) Recv() (*ServerResponse, error) {
+	m := new(ServerResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func _GameManager_Talk_Handler(srv interface{}, stream grpc.ServerStream) error 
 }
 
 type GameManager_TalkServer interface {
-	Send(*GameState) error
+	Send(*ServerResponse) error
 	Recv() (*ClientMessage, error)
 	grpc.ServerStream
 }
@@ -134,7 +134,7 @@ type gameManagerTalkServer struct {
 	grpc.ServerStream
 }
 
-func (x *gameManagerTalkServer) Send(m *GameState) error {
+func (x *gameManagerTalkServer) Send(m *ServerResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
