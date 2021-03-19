@@ -1,0 +1,23 @@
+os: linux
+arch: arm64-graviton2
+dist: focal
+
+sudo: required
+language: go
+services:
+    - docker
+    
+branches:
+    only:
+        - main
+        - develop
+
+before_script:
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - make fmt-local && git diff --exit-code
+    - make test-local
+
+script:
+    - 'if [[ "$TRAVIS_BRANCH" == "main" ]] && [[ "$TRAVIS_PULL_REQUEST" == "false" ]]; then make push IMAGE_VERSION=latest; fi'
+    - 'if [[ "$TRAVIS_BRANCH" == "develop" ]] && [[ "$TRAVIS_PULL_REQUEST" == "false" ]]; then make push IMAGE_VERSION=develop; fi'
+    - 'if [[ "$TRAVIS_BRANCH" != "master" ]] && [[ "$TRAVIS_PULL_REQUEST" == "false" ]]; then make push; fi'
