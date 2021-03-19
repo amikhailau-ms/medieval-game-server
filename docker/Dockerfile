@@ -23,4 +23,5 @@ RUN mkdir -p /lib64 && \
 COPY --from=builder /gobin/server /gobin/server
 COPY --from=builder ${GODIR}/test/* /test/
 
+EXPOSE 9979
 ENTRYPOINT ["/gobin/server"]
