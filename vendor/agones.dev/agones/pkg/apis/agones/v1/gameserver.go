@@ -19,13 +19,14 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/mattbaird/jsonpatch"
-
 	"agones.dev/agones/pkg"
 	"agones.dev/agones/pkg/apis"
 	"agones.dev/agones/pkg/apis/agones"
+	"agones.dev/agones/pkg/util/runtime"
+	"github.com/mattbaird/jsonpatch"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
@@ -70,6 +71,9 @@ const (
 	// This will mean that users will need to lookup what port has been opened through the server side SDK.
 	Passthrough PortPolicy = "Passthrough"
 
+	// ProtocolTCPUDP Protocol exposes the hostPort allocated for this container for both TCP and UDP.
+	ProtocolTCPUDP corev1.Protocol = "TCPUDP"
+
 	// SdkServerLogLevelInfo will cause the SDK server to output all messages except for debug messages.
 	SdkServerLogLevelInfo SdkServerLogLevel = "Info"
 	// SdkServerLogLevelDebug will cause the SDK server to output all messages including debug messages.
@@ -91,6 +95,10 @@ const (
 	// DevAddressAnnotation is an annotation to indicate that a GameServer hosted outside of Agones.
 	// A locally hosted GameServer is not managed by Agones it is just simply registered.
 	DevAddressAnnotation = "agones.dev/dev-address"
+	// GameServerReadyContainerIDAnnotation is an annotation that is set on the GameServer
+	// becomes ready, so we can track when restarts should occur and when a GameServer
+	// should be moved to Unhealthy.
+	GameServerReadyContainerIDAnnotation = agones.GroupName + "/ready-container-id"
 )
 
 var (
@@ -137,7 +145,7 @@ type GameServerSpec struct {
 	// container defined
 	Container string `json:"container,omitempty"`
 	// Ports are the array of ports that can be exposed via the game server
-	Ports []GameServerPort `json:"ports"`
+	Ports []GameServerPort `json:"ports,omitempty"`
 	// Health configures health checking
 	Health Health `json:"health,omitempty"`
 	// Scheduling strategy. Defaults to "Packed"
@@ -146,6 +154,14 @@ type GameServerSpec struct {
 	SdkServer SdkServer `json:"sdkServer,omitempty"`
 	// Template describes the Pod that will be created for the GameServer
 	Template corev1.PodTemplateSpec `json:"template"`
+	// (Alpha, PlayerTracking feature flag) Players provides the configuration for player tracking features.
+	// +optional
+	Players *PlayersSpec `json:"players,omitempty"`
+}
+
+// PlayersSpec tracks the initial player capacity
+type PlayersSpec struct {
+	InitialCapacity int64 `json:"initialCapacity,omitempty"`
 }
 
 // GameServerState is the state for the GameServer
@@ -177,11 +193,14 @@ type GameServerPort struct {
 	// When `Static` portPolicy is specified, `HostPort` is required, to specify the port that game clients will
 	// connect to
 	PortPolicy PortPolicy `json:"portPolicy,omitempty"`
-	// ContainerPort is the port that is being opened on the game server process
+	// Container is the name of the container on which to open the port. Defaults to the game server container.
+	// +optional
+	Container *string `json:"container,omitempty"`
+	// ContainerPort is the port that is being opened on the specified container's process
 	ContainerPort int32 `json:"containerPort,omitempty"`
 	// HostPort the port exposed on the host for clients to connect to
 	HostPort int32 `json:"hostPort,omitempty"`
-	// Protocol is the network protocol being used. Defaults to UDP. TCP is the only other option
+	// Protocol is the network protocol being used. Defaults to UDP. TCP and TCPUDP are other options.
 	Protocol corev1.Protocol `json:"protocol,omitempty"`
 }
 
@@ -206,6 +225,10 @@ type GameServerStatus struct {
 	Address       string                 `json:"address"`
 	NodeName      string                 `json:"nodeName"`
 	ReservedUntil *metav1.Time           `json:"reservedUntil"`
+	// [Stage:Alpha]
+	// [FeatureFlag:PlayerTracking]
+	// +optional
+	Players *PlayerStatus `json:"players"`
 }
 
 // GameServerStatusPort shows the port that was allocated to a
@@ -213,6 +236,13 @@ type GameServerStatus struct {
 type GameServerStatusPort struct {
 	Name string `json:"name,omitempty"`
 	Port int32  `json:"port"`
+}
+
+// PlayerStatus stores the current player capacity values
+type PlayerStatus struct {
+	Count    int64    `json:"count"`
+	Capacity int64    `json:"capacity"`
+	IDs      []string `json:"ids"`
 }
 
 // ApplyDefaults applies default values to the GameServer if they are not already populated
@@ -226,7 +256,7 @@ func (gs *GameServer) ApplyDefaults() {
 	gs.ObjectMeta.Finalizers = append(gs.ObjectMeta.Finalizers, agones.GroupName)
 
 	gs.Spec.ApplyDefaults()
-	gs.applyStateDefaults()
+	gs.applyStatusDefaults()
 }
 
 // ApplyDefaults applies default values to the GameServerSpec if they are not already populated
@@ -244,12 +274,10 @@ func (gss *GameServerSpec) applySdkServerDefaults() {
 		gss.SdkServer.LogLevel = SdkServerLogLevelInfo
 	}
 	if gss.SdkServer.GRPCPort == 0 {
-		// TODO(roberthbailey): Change to 9357 in the 1.2.0 release
-		gss.SdkServer.GRPCPort = 59357
+		gss.SdkServer.GRPCPort = 9357
 	}
 	if gss.SdkServer.HTTPPort == 0 {
-		// TODO(roberthbailey): Change to 9358 in the 1.2.0 release
-		gss.SdkServer.HTTPPort = 59358
+		gss.SdkServer.HTTPPort = 9358
 	}
 }
 
@@ -275,13 +303,24 @@ func (gss *GameServerSpec) applyHealthDefaults() {
 	}
 }
 
-// applyStateDefaults applies state defaults
-func (gs *GameServer) applyStateDefaults() {
+// applyStatusDefaults applies Status defaults
+func (gs *GameServer) applyStatusDefaults() {
 	if gs.Status.State == "" {
 		gs.Status.State = GameServerStateCreating
-		// applyStateDefaults() should be called after applyPortDefaults()
+		// applyStatusDefaults() should be called after applyPortDefaults()
 		if gs.HasPortPolicy(Dynamic) || gs.HasPortPolicy(Passthrough) {
 			gs.Status.State = GameServerStatePortAllocation
+		}
+	}
+
+	if runtime.FeatureEnabled(runtime.FeaturePlayerTracking) {
+		// set value if enabled, otherwise very easy to accidentally panic
+		// when gs.Status.Players is nil
+		if gs.Status.Players == nil {
+			gs.Status.Players = &PlayerStatus{}
+		}
+		if gs.Spec.Players != nil {
+			gs.Status.Players.Capacity = gs.Spec.Players.InitialCapacity
 		}
 	}
 }
@@ -297,6 +336,10 @@ func (gss *GameServerSpec) applyPortDefaults() {
 		if p.Protocol == "" {
 			gss.Ports[i].Protocol = "UDP"
 		}
+
+		if p.Container == nil || *p.Container == "" {
+			gss.Ports[i].Container = &gss.Container
+		}
 	}
 }
 
@@ -310,15 +353,26 @@ func (gss *GameServerSpec) applySchedulingDefaults() {
 // devAddress is a specific IP address used for local Gameservers, for fleets "" is used
 // If a GameServer Spec is invalid there will be > 0 values in
 // the returned array
-func (gss GameServerSpec) Validate(devAddress string) ([]metav1.StatusCause, bool) {
+func (gss *GameServerSpec) Validate(devAddress string) ([]metav1.StatusCause, bool) {
 	var causes []metav1.StatusCause
+
+	if !runtime.FeatureEnabled(runtime.FeaturePlayerTracking) {
+		if gss.Players != nil {
+			causes = append(causes, metav1.StatusCause{
+				Type:    metav1.CauseTypeFieldValueNotSupported,
+				Field:   "players",
+				Message: fmt.Sprintf("Value cannot be set unless feature flag %s is enabled", runtime.FeaturePlayerTracking),
+			})
+		}
+	}
+
 	if devAddress != "" {
 		// verify that the value is a valid IP address.
 		if net.ParseIP(devAddress) == nil {
 			causes = append(causes, metav1.StatusCause{
 				Type:    metav1.CauseTypeFieldValueInvalid,
 				Field:   fmt.Sprintf("annotations.%s", DevAddressAnnotation),
-				Message: fmt.Sprintf("Value '%s' of annotation '%s' must be a valid IP address.", DevAddressAnnotation, devAddress),
+				Message: fmt.Sprintf("Value '%s' of annotation '%s' must be a valid IP address", devAddress, DevAddressAnnotation),
 			})
 		}
 
@@ -327,7 +381,7 @@ func (gss GameServerSpec) Validate(devAddress string) ([]metav1.StatusCause, boo
 				causes = append(causes, metav1.StatusCause{
 					Type:    metav1.CauseTypeFieldValueRequired,
 					Field:   fmt.Sprintf("%s.hostPort", p.Name),
-					Message: fmt.Sprintf("HostPort is required if GameServer is annotated with %s", DevAddressAnnotation),
+					Message: fmt.Sprintf("HostPort is required if GameServer is annotated with '%s'", DevAddressAnnotation),
 				})
 			}
 			if p.PortPolicy != Static {
@@ -340,11 +394,21 @@ func (gss GameServerSpec) Validate(devAddress string) ([]metav1.StatusCause, boo
 		}
 	} else {
 		// make sure a name is specified when there is multiple containers in the pod.
-		if len(gss.Container) == 0 && len(gss.Template.Spec.Containers) > 1 {
+		if gss.Container == "" && len(gss.Template.Spec.Containers) > 1 {
 			causes = append(causes, metav1.StatusCause{
 				Type:    metav1.CauseTypeFieldValueInvalid,
 				Field:   "container",
 				Message: ErrContainerRequired,
+			})
+		}
+
+		// make sure the container value points to a valid container
+		_, _, err := gss.FindContainer(gss.Container)
+		if err != nil {
+			causes = append(causes, metav1.StatusCause{
+				Type:    metav1.CauseTypeFieldValueInvalid,
+				Field:   "container",
+				Message: err.Error(),
 			})
 		}
 
@@ -372,23 +436,66 @@ func (gss GameServerSpec) Validate(devAddress string) ([]metav1.StatusCause, boo
 				causes = append(causes, metav1.StatusCause{
 					Type:    metav1.CauseTypeFieldValueInvalid,
 					Field:   fmt.Sprintf("%s.hostPort", p.Name),
-					Message: ErrHostPortDynamic,
+					Message: ErrHostPort,
+				})
+			}
+
+			if p.Container != nil && gss.Container != "" {
+				_, _, err := gss.FindContainer(*p.Container)
+				if err != nil {
+					causes = append(causes, metav1.StatusCause{
+						Type:    metav1.CauseTypeFieldValueInvalid,
+						Field:   fmt.Sprintf("%s.container", p.Name),
+						Message: ErrContainerNameInvalid,
+					})
+				}
+			}
+		}
+		for _, c := range gss.Template.Spec.Containers {
+			validationErrors := validateResources(c)
+			for _, err := range validationErrors {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Field:   "container",
+					Message: err.Error(),
 				})
 			}
 		}
-
-		// make sure the container value points to a valid container
-		_, _, err := gss.FindGameServerContainer()
-		if err != nil {
-			causes = append(causes, metav1.StatusCause{
-				Type:    metav1.CauseTypeFieldValueInvalid,
-				Field:   "container",
-				Message: err.Error(),
-			})
-		}
 	}
-	return causes, len(causes) == 0
+	objMetaCauses := validateObjectMeta(&gss.Template.ObjectMeta)
+	if len(objMetaCauses) > 0 {
+		causes = append(causes, objMetaCauses...)
+	}
 
+	return causes, len(causes) == 0
+}
+
+// ValidateResource validates limit or Memory CPU resources used for containers in pods
+// If a GameServer is invalid there will be > 0 values in
+// the returned array
+func ValidateResource(request resource.Quantity, limit resource.Quantity, resourceName corev1.ResourceName) []error {
+	validationErrors := make([]error, 0)
+	if !limit.IsZero() && request.Cmp(limit) > 0 {
+		validationErrors = append(validationErrors, errors.New(fmt.Sprintf("Request must be less than or equal to %s limit", resourceName)))
+	}
+	if request.Cmp(resource.Quantity{}) < 0 {
+		validationErrors = append(validationErrors, errors.New(fmt.Sprintf("Resource %s request value must be non negative", resourceName)))
+	}
+	if limit.Cmp(resource.Quantity{}) < 0 {
+		validationErrors = append(validationErrors, errors.New(fmt.Sprintf("Resource %s limit value must be non negative", resourceName)))
+	}
+
+	return validationErrors
+}
+
+// validateResources validate CPU and Memory resources
+func validateResources(container corev1.Container) []error {
+	validationErrors := make([]error, 0)
+	resourceErrors := ValidateResource(container.Resources.Requests[corev1.ResourceCPU], container.Resources.Limits[corev1.ResourceCPU], corev1.ResourceCPU)
+	validationErrors = append(validationErrors, resourceErrors...)
+	resourceErrors = ValidateResource(container.Resources.Requests[corev1.ResourceMemory], container.Resources.Limits[corev1.ResourceMemory], corev1.ResourceMemory)
+	validationErrors = append(validationErrors, resourceErrors...)
+	return validationErrors
 }
 
 // Validate validates the GameServer configuration.
@@ -425,37 +532,54 @@ func (gs *GameServer) IsBeingDeleted() bool {
 	return !gs.ObjectMeta.DeletionTimestamp.IsZero() || gs.Status.State == GameServerStateShutdown
 }
 
-// FindGameServerContainer returns the container that is specified in
-// gameServer.Spec.Container. Returns the index and the value.
-// Returns an error if not found
-func (gss *GameServerSpec) FindGameServerContainer() (int, corev1.Container, error) {
+// IsBeforeReady returns true if the GameServer Status has yet to move to or past the Ready
+// state in its lifecycle, such as Allocated or Reserved, or any of the Error/Unhealthy states
+func (gs *GameServer) IsBeforeReady() bool {
+	switch gs.Status.State {
+	case GameServerStatePortAllocation:
+		return true
+	case GameServerStateCreating:
+		return true
+	case GameServerStateStarting:
+		return true
+	case GameServerStateScheduled:
+		return true
+	case GameServerStateRequestReady:
+		return true
+	}
+
+	return false
+}
+
+// FindContainer returns the container specified by the name parameter. Returns the index and the value.
+// Returns an error if not found.
+func (gss *GameServerSpec) FindContainer(name string) (int, corev1.Container, error) {
 	for i, c := range gss.Template.Spec.Containers {
-		if c.Name == gss.Container {
+		if c.Name == name {
 			return i, c, nil
 		}
 	}
 
-	return -1, corev1.Container{}, errors.Errorf("Could not find a container named %s", gss.Container)
+	return -1, corev1.Container{}, errors.Errorf("Could not find a container named %s", name)
 }
 
 // FindGameServerContainer returns the container that is specified in
 // gameServer.Spec.Container. Returns the index and the value.
 // Returns an error if not found
 func (gs *GameServer) FindGameServerContainer() (int, corev1.Container, error) {
-	return gs.Spec.FindGameServerContainer()
+	return gs.Spec.FindContainer(gs.Spec.Container)
 }
 
-// ApplyToPodGameServerContainer applies func(v1.Container) to the pod's gameserver container
-func (gs *GameServer) ApplyToPodGameServerContainer(pod *corev1.Pod, f func(corev1.Container) corev1.Container) *corev1.Pod {
+// ApplyToPodContainer applies func(v1.Container) to the specified container in the pod.
+// Returns an error if the container is not found.
+func (gs *GameServer) ApplyToPodContainer(pod *corev1.Pod, containerName string, f func(corev1.Container) corev1.Container) error {
 	for i, c := range pod.Spec.Containers {
-		if c.Name == gs.Spec.Container {
-			c = f(c)
-			pod.Spec.Containers[i] = c
-			break
+		if c.Name == containerName {
+			pod.Spec.Containers[i] = f(c)
+			return nil
 		}
 	}
-
-	return pod
+	return errors.Errorf("failed to find container named %s in pod spec", containerName)
 }
 
 // Pod creates a new Pod from the PodTemplateSpec
@@ -467,23 +591,21 @@ func (gs *GameServer) Pod(sidecars ...corev1.Container) (*corev1.Pod, error) {
 	}
 
 	gs.podObjectMeta(pod)
-
-	i, gsContainer, err := gs.FindGameServerContainer()
-	// this shouldn't happen, but if it does.
-	if err != nil {
-		return pod, err
-	}
-
 	for _, p := range gs.Spec.Ports {
 		cp := corev1.ContainerPort{
 			ContainerPort: p.ContainerPort,
 			HostPort:      p.HostPort,
 			Protocol:      p.Protocol,
 		}
-		gsContainer.Ports = append(gsContainer.Ports, cp)
-	}
-	pod.Spec.Containers[i] = gsContainer
+		err := gs.ApplyToPodContainer(pod, *p.Container, func(c corev1.Container) corev1.Container {
+			c.Ports = append(c.Ports, cp)
 
+			return c
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	pod.Spec.Containers = append(pod.Spec.Containers, sidecars...)
 
 	gs.podScheduling(pod)
@@ -555,13 +677,13 @@ func (gs *GameServer) podScheduling(pod *corev1.Pod) {
 }
 
 // DisableServiceAccount disables the service account for the gameserver container
-func (gs *GameServer) DisableServiceAccount(pod *corev1.Pod) {
+func (gs *GameServer) DisableServiceAccount(pod *corev1.Pod) error {
 	// gameservers don't get access to the k8s api.
 	emptyVol := corev1.Volume{Name: "empty", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}
 	pod.Spec.Volumes = append(pod.Spec.Volumes, emptyVol)
 	mount := corev1.VolumeMount{MountPath: "/var/run/secrets/kubernetes.io/serviceaccount", Name: emptyVol.Name, ReadOnly: true}
 
-	gs.ApplyToPodGameServerContainer(pod, func(c corev1.Container) corev1.Container {
+	return gs.ApplyToPodContainer(pod, gs.Spec.Container, func(c corev1.Container) corev1.Container {
 		c.VolumeMounts = append(c.VolumeMounts, mount)
 
 		return c

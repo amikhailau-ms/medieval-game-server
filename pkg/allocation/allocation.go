@@ -1,6 +1,7 @@
 package allocation
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -54,7 +55,7 @@ func AllocateGameServer() (*allocationv1.GameServerAllocation, error) {
 		return nil, err
 	}
 
-	gsa, err := agonesClient.AllocationV1().GameServerAllocations("medieval-game-server").Create(createAgonesGameServerAllocation())
+	gsa, err := agonesClient.AllocationV1().GameServerAllocations("medieval-game-server").Create(context.Background(), createAgonesGameServerAllocation(), metav1.CreateOptions{})
 	if err != nil {
 		log.Printf("error requesting allocation: %v\n", err)
 		return nil, err

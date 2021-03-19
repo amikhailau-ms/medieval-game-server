@@ -30,8 +30,8 @@ const (
 )
 
 // +genclient
-// +genclient:method=GetScale,verb=get,subresource=scale,result=k8s.io/api/extensions/v1beta1.Scale
-// +genclient:method=UpdateScale,verb=update,subresource=scale,input=k8s.io/api/extensions/v1beta1.Scale,result=k8s.io/api/extensions/v1beta1.Scale
+// +genclient:method=GetScale,verb=get,subresource=scale,result=k8s.io/api/autoscaling/v1.Scale
+// +genclient:method=UpdateScale,verb=update,subresource=scale,input=k8s.io/api/autoscaling/v1.Scale,result=k8s.io/api/autoscaling/v1.Scale
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // Fleet is the data structure for a Fleet resource
@@ -55,7 +55,7 @@ type FleetList struct {
 
 // FleetSpec is the spec for a Fleet
 type FleetSpec struct {
-	// Replicas are the number of GameServers that should be in this set
+	// Replicas are the number of GameServers that should be in this set. Defaults to 0.
 	Replicas int32 `json:"replicas"`
 	// Deployment strategy
 	Strategy appsv1.DeploymentStrategy `json:"strategy"`
@@ -76,6 +76,11 @@ type FleetStatus struct {
 	ReservedReplicas int32 `json:"reservedReplicas"`
 	// AllocatedReplicas are the number of Allocated GameServer replicas
 	AllocatedReplicas int32 `json:"allocatedReplicas"`
+	// [Stage:Alpha]
+	// [FeatureFlag:PlayerTracking]
+	// Players are the current total player capacity and count for this Fleet
+	// +optional
+	Players *AggregatedPlayerStatus `json:"players,omitempty"`
 }
 
 // GameServerSet returns a single GameServerSet for this Fleet definition
@@ -173,11 +178,21 @@ func (f *Fleet) Validate() ([]metav1.StatusCause, bool) {
 	if f.Spec.Strategy.Type == appsv1.RollingUpdateDeploymentStrategyType {
 		f.validateRollingUpdate(f.Spec.Strategy.RollingUpdate.MaxUnavailable, &causes, "MaxUnavailable")
 		f.validateRollingUpdate(f.Spec.Strategy.RollingUpdate.MaxSurge, &causes, "MaxSurge")
+	} else if f.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		causes = append(causes, metav1.StatusCause{
+			Type:    metav1.CauseTypeFieldValueInvalid,
+			Field:   "Type",
+			Message: "Strategy Type should be one of: RollingUpdate, Recreate.",
+		})
 	}
 	// check Gameserver specification in a Fleet
 	gsCauses := validateGSSpec(f)
 	if len(gsCauses) > 0 {
 		causes = append(causes, gsCauses...)
+	}
+	objMetaCauses := validateObjectMeta(&f.Spec.Template.ObjectMeta)
+	if len(objMetaCauses) > 0 {
+		causes = append(causes, objMetaCauses...)
 	}
 
 	return causes, len(causes) == 0
@@ -221,4 +236,29 @@ func SumStatusReplicas(list []*GameServerSet) int32 {
 	}
 
 	return total
+}
+
+// SumSpecReplicas returns the total number of
+// Spec.Replicas in the list of GameServerSets
+func SumSpecReplicas(list []*GameServerSet) int32 {
+	total := int32(0)
+	for _, gsSet := range list {
+		if gsSet != nil {
+			total += gsSet.Spec.Replicas
+		}
+	}
+
+	return total
+}
+
+// GetReadyReplicaCountForGameServerSets returns the total number of
+// Status.ReadyReplicas in the list of GameServerSets
+func GetReadyReplicaCountForGameServerSets(gss []*GameServerSet) int32 {
+	totalReadyReplicas := int32(0)
+	for _, gss := range gss {
+		if gss != nil {
+			totalReadyReplicas += gss.Status.ReadyReplicas
+		}
+	}
+	return totalReadyReplicas
 }
