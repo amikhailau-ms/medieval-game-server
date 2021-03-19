@@ -3,7 +3,7 @@ module github.com/amikhailau/medieval-game-server
 go 1.15
 
 require (
-	agones.dev/agones v1.1.0
+	agones.dev/agones v1.13.0
 	github.com/Tarliton/collision2d v0.1.0
 	github.com/golang/protobuf v1.4.3
 	github.com/spf13/afero v1.5.1 // indirect
@@ -14,8 +14,8 @@ require (
 	google.golang.org/grpc v1.33.1
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/apimachinery v0.0.0-20190221084156-01f179d85dbc // indirect
-	k8s.io/client-go v9.0.0+incompatible
+	k8s.io/apimachinery v0.18.15
+	k8s.io/client-go v0.18.15
 )
 
 replace github.com/Tarliton/collision2d v0.1.0 => github.com/amikhailau/collision2d v0.1.1

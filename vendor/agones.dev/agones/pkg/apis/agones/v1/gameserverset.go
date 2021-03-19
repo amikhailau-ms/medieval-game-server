@@ -15,10 +15,9 @@
 package v1
 
 import (
-	"reflect"
-
 	"agones.dev/agones/pkg/apis"
 	"agones.dev/agones/pkg/apis/agones"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -29,13 +28,13 @@ const (
 )
 
 // +genclient
-// +genclient:method=GetScale,verb=get,subresource=scale,result=k8s.io/api/extensions/v1beta1.Scale
-// +genclient:method=UpdateScale,verb=update,subresource=scale,input=k8s.io/api/extensions/v1beta1.Scale,result=k8s.io/api/extensions/v1beta1.Scale
+// +genclient:method=GetScale,verb=get,subresource=scale,result=k8s.io/api/autoscaling/v1.Scale
+// +genclient:method=UpdateScale,verb=update,subresource=scale,input=k8s.io/api/autoscaling/v1.Scale,result=k8s.io/api/autoscaling/v1.Scale
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // GameServerSet is the data structure for a set of GameServers.
 // This matches philosophically with the relationship between
-// Depoyments and ReplicaSets
+// Deployments and ReplicaSets
 type GameServerSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -66,23 +65,28 @@ type GameServerSetSpec struct {
 
 // GameServerSetStatus is the status of a GameServerSet
 type GameServerSetStatus struct {
-	// Replicas the total number of current GameServer replicas
+	// Replicas is the total number of current GameServer replicas
 	Replicas int32 `json:"replicas"`
-	// ReadyReplicas are the number of Ready GameServer replicas
+	// ReadyReplicas is the number of Ready GameServer replicas
 	ReadyReplicas int32 `json:"readyReplicas"`
-	// ReservedReplicas are the number of Reserved GameServer replicas
+	// ReservedReplicas is the number of Reserved GameServer replicas
 	ReservedReplicas int32 `json:"reservedReplicas"`
-	// AllocatedReplicas are the number of Allocated GameServer replicas
+	// AllocatedReplicas is the number of Allocated GameServer replicas
 	AllocatedReplicas int32 `json:"allocatedReplicas"`
-	// ShutdownReplicas are the number of Shutdown GameServers replicas
+	// ShutdownReplicas is the number of Shutdown GameServers replicas
 	ShutdownReplicas int32 `json:"shutdownReplicas"`
+	// [Stage:Alpha]
+	// [FeatureFlag:PlayerTracking]
+	// Players is the current total player capacity and count for this GameServerSet
+	// +optional
+	Players *AggregatedPlayerStatus `json:"players,omitempty"`
 }
 
 // ValidateUpdate validates when updates occur. The argument
 // is the new GameServerSet, being passed into the old GameServerSet
-func (gsSet *GameServerSet) ValidateUpdate(new *GameServerSet) ([]metav1.StatusCause, bool) {
-	causes := validateName(new)
-	if !reflect.DeepEqual(gsSet.Spec.Template, new.Spec.Template) {
+func (gsSet *GameServerSet) ValidateUpdate(newGSS *GameServerSet) ([]metav1.StatusCause, bool) {
+	causes := validateName(newGSS)
+	if !apiequality.Semantic.DeepEqual(gsSet.Spec.Template, newGSS.Spec.Template) {
 		causes = append(causes, metav1.StatusCause{
 			Type:    metav1.CauseTypeFieldValueInvalid,
 			Field:   "template",
@@ -93,26 +97,31 @@ func (gsSet *GameServerSet) ValidateUpdate(new *GameServerSet) ([]metav1.StatusC
 	return causes, len(causes) == 0
 }
 
-// Validate validates when Create occur. Check the name size
+// Validate validates when Create occurs. Check the name size
 func (gsSet *GameServerSet) Validate() ([]metav1.StatusCause, bool) {
 	causes := validateName(gsSet)
 
-	// check Gameserver specification in a Gameserverset
+	// check GameServer specification in a GameServerSet
 	gsCauses := validateGSSpec(gsSet)
 	if len(gsCauses) > 0 {
 		causes = append(causes, gsCauses...)
 	}
 
+	objMetaCauses := validateObjectMeta(&gsSet.Spec.Template.ObjectMeta)
+	if len(objMetaCauses) > 0 {
+		causes = append(causes, objMetaCauses...)
+	}
+
 	return causes, len(causes) == 0
 }
 
-// GetGameServerSpec get underlying Gameserver specification
+// GetGameServerSpec get underlying GameServer specification
 func (gsSet *GameServerSet) GetGameServerSpec() *GameServerSpec {
 	return &gsSet.Spec.Template.Spec
 }
 
 // GameServer returns a single GameServer derived
-// from the GameSever template
+// from the GameServer template
 func (gsSet *GameServerSet) GameServer() *GameServer {
 	gs := &GameServer{
 		ObjectMeta: *gsSet.Spec.Template.ObjectMeta.DeepCopy(),

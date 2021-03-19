@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC All Rights Reserved.
+// Copyright 2020 Google LLC All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,9 @@
 package v1
 
 import (
+	"context"
+	"time"
+
 	v1 "agones.dev/agones/pkg/apis/autoscaling/v1"
 	scheme "agones.dev/agones/pkg/client/clientset/versioned/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,15 +38,15 @@ type FleetAutoscalersGetter interface {
 
 // FleetAutoscalerInterface has methods to work with FleetAutoscaler resources.
 type FleetAutoscalerInterface interface {
-	Create(*v1.FleetAutoscaler) (*v1.FleetAutoscaler, error)
-	Update(*v1.FleetAutoscaler) (*v1.FleetAutoscaler, error)
-	UpdateStatus(*v1.FleetAutoscaler) (*v1.FleetAutoscaler, error)
-	Delete(name string, options *metav1.DeleteOptions) error
-	DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error
-	Get(name string, options metav1.GetOptions) (*v1.FleetAutoscaler, error)
-	List(opts metav1.ListOptions) (*v1.FleetAutoscalerList, error)
-	Watch(opts metav1.ListOptions) (watch.Interface, error)
-	Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.FleetAutoscaler, err error)
+	Create(ctx context.Context, fleetAutoscaler *v1.FleetAutoscaler, opts metav1.CreateOptions) (*v1.FleetAutoscaler, error)
+	Update(ctx context.Context, fleetAutoscaler *v1.FleetAutoscaler, opts metav1.UpdateOptions) (*v1.FleetAutoscaler, error)
+	UpdateStatus(ctx context.Context, fleetAutoscaler *v1.FleetAutoscaler, opts metav1.UpdateOptions) (*v1.FleetAutoscaler, error)
+	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
+	DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1.FleetAutoscaler, error)
+	List(ctx context.Context, opts metav1.ListOptions) (*v1.FleetAutoscalerList, error)
+	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.FleetAutoscaler, err error)
 	FleetAutoscalerExpansion
 }
 
@@ -62,113 +65,131 @@ func newFleetAutoscalers(c *AutoscalingV1Client, namespace string) *fleetAutosca
 }
 
 // Get takes name of the fleetAutoscaler, and returns the corresponding fleetAutoscaler object, and an error if there is any.
-func (c *fleetAutoscalers) Get(name string, options metav1.GetOptions) (result *v1.FleetAutoscaler, err error) {
+func (c *fleetAutoscalers) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.FleetAutoscaler, err error) {
 	result = &v1.FleetAutoscaler{}
 	err = c.client.Get().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do().
+		Do(ctx).
 		Into(result)
 	return
 }
 
 // List takes label and field selectors, and returns the list of FleetAutoscalers that match those selectors.
-func (c *fleetAutoscalers) List(opts metav1.ListOptions) (result *v1.FleetAutoscalerList, err error) {
+func (c *fleetAutoscalers) List(ctx context.Context, opts metav1.ListOptions) (result *v1.FleetAutoscalerList, err error) {
+	var timeout time.Duration
+	if opts.TimeoutSeconds != nil {
+		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
+	}
 	result = &v1.FleetAutoscalerList{}
 	err = c.client.Get().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
 		VersionedParams(&opts, scheme.ParameterCodec).
-		Do().
+		Timeout(timeout).
+		Do(ctx).
 		Into(result)
 	return
 }
 
 // Watch returns a watch.Interface that watches the requested fleetAutoscalers.
-func (c *fleetAutoscalers) Watch(opts metav1.ListOptions) (watch.Interface, error) {
+func (c *fleetAutoscalers) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+	var timeout time.Duration
+	if opts.TimeoutSeconds != nil {
+		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
+	}
 	opts.Watch = true
 	return c.client.Get().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
 		VersionedParams(&opts, scheme.ParameterCodec).
-		Watch()
+		Timeout(timeout).
+		Watch(ctx)
 }
 
 // Create takes the representation of a fleetAutoscaler and creates it.  Returns the server's representation of the fleetAutoscaler, and an error, if there is any.
-func (c *fleetAutoscalers) Create(fleetAutoscaler *v1.FleetAutoscaler) (result *v1.FleetAutoscaler, err error) {
+func (c *fleetAutoscalers) Create(ctx context.Context, fleetAutoscaler *v1.FleetAutoscaler, opts metav1.CreateOptions) (result *v1.FleetAutoscaler, err error) {
 	result = &v1.FleetAutoscaler{}
 	err = c.client.Post().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(fleetAutoscaler).
-		Do().
+		Do(ctx).
 		Into(result)
 	return
 }
 
 // Update takes the representation of a fleetAutoscaler and updates it. Returns the server's representation of the fleetAutoscaler, and an error, if there is any.
-func (c *fleetAutoscalers) Update(fleetAutoscaler *v1.FleetAutoscaler) (result *v1.FleetAutoscaler, err error) {
+func (c *fleetAutoscalers) Update(ctx context.Context, fleetAutoscaler *v1.FleetAutoscaler, opts metav1.UpdateOptions) (result *v1.FleetAutoscaler, err error) {
 	result = &v1.FleetAutoscaler{}
 	err = c.client.Put().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
 		Name(fleetAutoscaler.Name).
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(fleetAutoscaler).
-		Do().
+		Do(ctx).
 		Into(result)
 	return
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-
-func (c *fleetAutoscalers) UpdateStatus(fleetAutoscaler *v1.FleetAutoscaler) (result *v1.FleetAutoscaler, err error) {
+func (c *fleetAutoscalers) UpdateStatus(ctx context.Context, fleetAutoscaler *v1.FleetAutoscaler, opts metav1.UpdateOptions) (result *v1.FleetAutoscaler, err error) {
 	result = &v1.FleetAutoscaler{}
 	err = c.client.Put().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
 		Name(fleetAutoscaler.Name).
 		SubResource("status").
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(fleetAutoscaler).
-		Do().
+		Do(ctx).
 		Into(result)
 	return
 }
 
 // Delete takes name of the fleetAutoscaler and deletes it. Returns an error if one occurs.
-func (c *fleetAutoscalers) Delete(name string, options *metav1.DeleteOptions) error {
+func (c *fleetAutoscalers) Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
 		Name(name).
-		Body(options).
-		Do().
+		Body(&opts).
+		Do(ctx).
 		Error()
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *fleetAutoscalers) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
+func (c *fleetAutoscalers) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOpts metav1.ListOptions) error {
+	var timeout time.Duration
+	if listOpts.TimeoutSeconds != nil {
+		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
+	}
 	return c.client.Delete().
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
-		VersionedParams(&listOptions, scheme.ParameterCodec).
-		Body(options).
-		Do().
+		VersionedParams(&listOpts, scheme.ParameterCodec).
+		Timeout(timeout).
+		Body(&opts).
+		Do(ctx).
 		Error()
 }
 
 // Patch applies the patch and returns the patched fleetAutoscaler.
-func (c *fleetAutoscalers) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.FleetAutoscaler, err error) {
+func (c *fleetAutoscalers) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) (result *v1.FleetAutoscaler, err error) {
 	result = &v1.FleetAutoscaler{}
 	err = c.client.Patch(pt).
 		Namespace(c.ns).
 		Resource("fleetautoscalers").
-		SubResource(subresources...).
 		Name(name).
+		SubResource(subresources...).
+		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(data).
-		Do().
+		Do(ctx).
 		Into(result)
 	return
 }

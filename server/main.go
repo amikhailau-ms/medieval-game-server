@@ -6,6 +6,7 @@ import (
 	"net"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/amikhailau/medieval-game-server/pkg/connection"
 	"github.com/amikhailau/medieval-game-server/pkg/gamesession"
@@ -13,6 +14,8 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+
+	sdk "agones.dev/agones/sdks/go"
 )
 
 func init() {
@@ -26,6 +29,11 @@ func main() {
 	doneC := make(chan error)
 	absPath, _ := filepath.Abs("")
 	mapPath := filepath.Join(absPath, viper.GetString("gamemanager.map.file"))
+
+	agones, err := sdk.NewSDK()
+	if err != nil {
+		log.Fatalf("Could not connect to sdk: %v", err)
+	}
 
 	port := viper.GetInt("gameserver.port")
 	log.Printf("listening on port %d", port)
@@ -69,11 +77,40 @@ func main() {
 		doneC <- s.Serve(lis)
 	}()
 
+	stop := make(chan bool)
+	go doHealth(agones, stop)
+	err = agones.Ready()
+	if err != nil {
+		log.Fatalf("unable to send ready status: %v\n", err)
+	}
+
 	fmt.Printf("Server Initialized! Serving on %v port\n", port)
 
 	select {
 	case err = <-doneC:
 		log.Fatalf("failed to serve: %v\n", err)
 	case <-gm.FinishChan:
+	}
+
+	stop <- true
+	err = agones.Shutdown()
+	if err != nil {
+		log.Fatalf("unable to send shutdown signal: %v\n", err)
+	}
+}
+
+func doHealth(sdk *sdk.SDK, stop <-chan bool) {
+	tick := time.Tick(3 * time.Second)
+	for {
+		err := sdk.Health()
+		if err != nil {
+			log.Fatalf("Could not send health ping, %v", err)
+		}
+		select {
+		case <-stop:
+			log.Print("Stopped health pings")
+			return
+		case <-tick:
+		}
 	}
 }
