@@ -18,7 +18,7 @@ spec:
         containerPort: 9979
         protocol: TCP
       health:
-        initialDelaySeconds: 30
+        initialDelaySeconds: 120
         periodSeconds: 10
         failureThreshold: 3
       # Parameters for game server sidecar
