@@ -4,7 +4,7 @@ import "github.com/spf13/pflag"
 
 const (
 	defaultGameStatesSaved     = 10
-	defaultGameStatesShiftBack = 5
+	defaultGameStatesShiftBack = 3
 	defaultTicksPerSecond      = 30
 	defaultPlayerCount         = 2
 	defaultPlayerPickUpRange   = 10
