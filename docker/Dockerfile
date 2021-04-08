@@ -9,7 +9,7 @@ ARG GODIR
 LABEL stage=server-intermediate
 WORKDIR $GODIR
 COPY . $GODIR
-RUN go build -v -o /gobin/server ${PKG}/server
+RUN go build -v -o /gobin/server ${PKG}/cmd/server
 RUN ls /gobin
 
 # copy the server binary from builder stage; run the server binary

@@ -19,7 +19,12 @@ const (
 
 func main() {
 
-	gsa, err := allocation.AllocateGameServer()
+	agonesClient, err := allocation.ConnectToAgonesLocal()
+	if err != nil {
+		log.Fatalf("unable to connect to agones: %v", err)
+	}
+
+	gsa, err := allocation.AllocateGameServer(agonesClient)
 	if err != nil {
 		log.Fatalf("unable to allocate server to test: %v", err)
 	}

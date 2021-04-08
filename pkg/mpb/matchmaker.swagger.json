@@ -1,0 +1,108 @@
+{
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "swagger": "2.0",
+  "info": {
+    "title": "github.com/amikhailau/medieval-game-server/pkg/mpb/matchmaker.proto",
+    "version": "version not set"
+  },
+  "paths": {
+    "/matchmake": {
+      "get": {
+        "tags": [
+          "Matchmaker"
+        ],
+        "operationId": "MatchmakerCheckMatchmakeStatus",
+        "responses": {
+          "200": {
+            "description": "GET operation response",
+            "schema": {
+              "$ref": "#/definitions/matchmakerCheckMatchmakeStatusResponse"
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Matchmaker"
+        ],
+        "operationId": "MatchmakerMatchmake",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/matchmakerMatchmakeRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "POST operation response",
+            "schema": {
+              "$ref": "#/definitions/matchmakerMatchmakeResponse"
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Matchmaker"
+        ],
+        "operationId": "MatchmakerCancelMatchmake",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "matchmakerCheckMatchmakeStatusResponse": {
+      "type": "object",
+      "properties": {
+        "failed": {
+          "type": "boolean",
+          "format": "boolean"
+        },
+        "ip": {
+          "type": "string"
+        },
+        "not_matchmaked": {
+          "type": "boolean",
+          "format": "boolean"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "ready": {
+          "type": "boolean",
+          "format": "boolean"
+        }
+      }
+    },
+    "matchmakerMatchmakeRequest": {
+      "type": "object"
+    },
+    "matchmakerMatchmakeResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "readOnly": true
+        }
+      }
+    }
+  }
+}
