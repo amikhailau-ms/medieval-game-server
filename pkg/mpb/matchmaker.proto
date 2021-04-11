@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package matchmaker;
+
+option go_package = "github.com/amikhailau/medieval-game-server/pkg/mpb;mpb";
+
+import "google/api/annotations.proto";
+
+message MatchmakeRequest {
+
+}
+
+message MatchmakeResponse {
+    string id = 1;
+}
+
+message CheckMatchmakeStatusRequest {
+
+}
+
+message CheckMatchmakeStatusResponse {
+    bool ready = 1;
+    bool failed = 2;
+    bool not_matchmaked = 3;
+    string ip = 4;
+    int32 port = 5;
+}
+
+message CancelMatchmakeRequest {}
+
+message CancelMatchmakeResponse {
+    
+}
+
+service Matchmaker {
+    rpc Matchmake (MatchmakeRequest) returns (MatchmakeResponse) {
+        option (google.api.http) = {
+            post: "/matchmake"
+            body: "*"
+        };
+    }
+    rpc CheckMatchmakeStatus(CheckMatchmakeStatusRequest) returns (CheckMatchmakeStatusResponse) {
+        option (google.api.http) = {
+            get: "/matchmake"
+        };
+    }
+    rpc CancelMatchmake (CancelMatchmakeRequest) returns (CancelMatchmakeResponse) {
+        option (google.api.http) = {
+            delete: "/matchmake"
+        };
+    }
+}

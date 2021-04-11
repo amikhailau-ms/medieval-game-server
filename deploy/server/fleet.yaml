@@ -32,3 +32,16 @@ spec:
           containers:
           - name: medieval-game-server
             image: amikhailau/medieval-game-server:latest
+---
+apiVersion: "autoscaling.agones.dev/v1"
+kind: FleetAutoscaler
+metadata:
+  name: fleet-autoscaler-example
+spec:
+  fleetName: fleet-example
+  policy:
+    type: Buffer
+    buffer:
+      bufferSize: 5
+      minReplicas: 5
+      maxReplicas: 100

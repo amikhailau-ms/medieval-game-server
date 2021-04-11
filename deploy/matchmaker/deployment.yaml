@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: medieval-game-server-matchmaker
+  namespace: medieval-game-server
+  labels:
+    app.kubernetes.io/name: "medieval-game-server"
+    app.kubernetes.io/component: "matchmaker"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "medieval-game-server"
+      app.kubernetes.io/component: "matchmaker"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "medieval-game-server"
+        app.kubernetes.io/component: "matchmaker"
+    spec:
+      serviceAccountName: fleet-allocator
+      restartPolicy: Always
+      containers:
+      - name: matchmaker
+        image: amikhailau/medieval-game-server:matchmaker-latest
+        imagePullPolicy: Always
+        args:
+          - --matchmaker.agones.enabled=true
+          - --matchmaker.lobby.size=2
+          - --matchmaker.lobby.delay=1s
+          - --matchmaker.match.expiration=2m
+          - --matchmaker.match.cleanup=5m
+        ports:
+          - containerPort: 8080
+        resources:
+          limits:
+            memory: 500Mi
+            cpu: 500m
+          requests:
+            memory: 10Mi
+            cpu: 1m
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fleet-allocator
+  namespace: medieval-game-server
+  labels:
+    app: fleet-allocator
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+- apiGroups: ["allocation.agones.dev"]
+  resources: ["gameserverallocations"]
+  verbs: ["create"]
+- apiGroups: ["agones.dev"]
+  resources: ["fleets"]
+  verbs: ["get"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fleet-allocator
+  namespace: medieval-game-server
+  labels:
+    app: fleet-allocator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fleet-allocator
+  namespace: medieval-game-server
+  labels:
+    app: fleet-allocator
+subjects:
+- kind: ServiceAccount
+  name: fleet-allocator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fleet-allocator
+---
