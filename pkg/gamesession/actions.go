@@ -102,6 +102,8 @@ func (g *GameSession) processMoveAction(moveAction *pb.MovementAction, playerId 
 }
 
 func (g *GameSession) processAttackAction(attackAction *pb.AttackAction, playerId int32) {
+	g.RLock()
+	defer g.RUnlock()
 	player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]
 	weapon := player.Equipment.Weapon
 	minGotYou := player.Position.X - weapon.GetWeaponChars().GetRange()
@@ -119,12 +121,16 @@ func (g *GameSession) processAttackAction(attackAction *pb.AttackAction, playerI
 		}
 		intervals[sPlayer.playerId] = true
 	}
+	g.AttackNotifications <- playerId
 	for possiblePlayer := range intervals {
 		g.processPossibleHit(playerId, possiblePlayer)
 	}
 }
 
 func (g *GameSession) processPickUpAction(pickUpAction *pb.PickUpAction, playerId int32) {
+	g.RLock()
+	defer g.RUnlock()
+
 	player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]
 	pItemPrev := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Items[int(pickUpAction.ItemId)]
 	distance := CalculateDistance(pItemPrev.Position.X, pItemPrev.Position.Y, player.Position.X, player.Position.Y)
@@ -134,8 +140,6 @@ func (g *GameSession) processPickUpAction(pickUpAction *pb.PickUpAction, playerI
 
 	var itemToDrop *pb.EquipmentItem
 
-	g.RLock()
-	defer g.RUnlock()
 	pItem := g.GameState.Items[int(pickUpAction.ItemId)]
 	pItem.Lock()
 	if pItem.pickedUp {
@@ -170,6 +174,8 @@ func (g *GameSession) processPickUpAction(pickUpAction *pb.PickUpAction, playerI
 }
 
 func (g *GameSession) processDropAction(dropAction *pb.DropAction, playerId int32) {
+	g.RLock()
+	defer g.RUnlock()
 
 	player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]
 
@@ -191,9 +197,6 @@ func (g *GameSession) processDropAction(dropAction *pb.DropAction, playerId int3
 	if itemToDrop == nil {
 		return
 	}
-
-	g.RLock()
-	defer g.RUnlock()
 
 	g.dropItem(playerId, itemToDrop.ItemId, true)
 
@@ -278,13 +281,22 @@ func (g *GameSession) processPossibleHit(attPlayerId, defPlayerId int32) {
 		if pPlayer.Equipment.Armor != nil {
 			attackValue -= pPlayer.Equipment.Armor.GetDamageReduction()
 		}
-		g.RLock()
 		playerToUpdate := g.GameState.Players[int(defPlayerId)]
 		playerToUpdate.Lock()
 		playerToUpdate.PlayerInfo.Hp -= attackValue
+		hpLeft := playerToUpdate.PlayerInfo.Hp
 		playerToUpdate.PlayerInfo.Position.X += knockbackX
 		playerToUpdate.PlayerInfo.Position.Y += knockbackY
 		playerToUpdate.Unlock()
-		g.RUnlock()
+		playerCurr := g.GameState.Players[int(attPlayerId)]
+		playerCurr.PlayerInfo.Stats.Damage += attackValue
+		if hpLeft <= 0 {
+			g.KillNotifications <- KillInfo{
+				Actor:    player.Nickname,
+				Receiver: pPlayer.Nickname,
+			}
+			g.deadPlayers <- pPlayer.PlayerId
+			playerCurr.PlayerInfo.Stats.Kills += 1
+		}
 	}
 }

@@ -2,7 +2,6 @@ package matchmaker
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -305,7 +304,6 @@ func TestCheckIfLobbyFits(t *testing.T) {
 				foundIds := make([]bool, len(test.expectedIds))
 
 				for key := range ms.matchData.Items() {
-					fmt.Println(key)
 					for index, expectedId := range test.expectedIds {
 						if strings.TrimPrefix(key, UserPrefix) == expectedId {
 							foundIds[index] = true

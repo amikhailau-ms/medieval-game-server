@@ -23,6 +23,9 @@ agones.dev/agones/sdks/go
 # github.com/Tarliton/collision2d v0.1.0 => github.com/amikhailau/collision2d v0.1.1
 ## explicit
 github.com/Tarliton/collision2d
+# github.com/cenkalti/backoff v2.2.1+incompatible
+## explicit
+github.com/cenkalti/backoff
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
@@ -51,6 +54,7 @@ github.com/golang/protobuf/ptypes/wrappers
 # github.com/google/gofuzz v1.1.0
 github.com/google/gofuzz
 # github.com/google/uuid v1.1.2
+## explicit
 github.com/google/uuid
 # github.com/googleapis/gnostic v0.1.0
 github.com/googleapis/gnostic/OpenAPIv2
@@ -94,6 +98,10 @@ github.com/infobloxopen/atlas-app-toolkit/requestid
 github.com/infobloxopen/atlas-app-toolkit/rpc/errdetails
 github.com/infobloxopen/atlas-app-toolkit/rpc/errfields
 github.com/infobloxopen/atlas-app-toolkit/server
+# github.com/jarcoal/httpmock v1.0.8
+## explicit
+github.com/jarcoal/httpmock
+github.com/jarcoal/httpmock/internal
 # github.com/joonix/log v0.0.0-20180502111528-d2d3f2f4a806
 github.com/joonix/log
 # github.com/json-iterator/go v1.1.8

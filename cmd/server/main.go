@@ -65,6 +65,24 @@ func main() {
 			},
 		},
 		MapFile: mapPath,
+		Uscfg: &connection.UsersServiceConfig{
+			Enabled:                viper.GetBool("users_service.enabled"),
+			Address:                viper.GetString("users_service.address"),
+			PutStatsEndpoint:       viper.GetString("users_service.stats.endpoint"),
+			PostCurrenciesEndpoint: viper.GetString("users_service.currencies.endpoint"),
+			BaseCoins:              viper.GetInt("users_service.currencies.base"),
+			DamageCoinsMultiplier:  viper.GetFloat64("users_service.currencies.damage"),
+			KillCoinsMultiplier:    viper.GetFloat64("users_service.currencies.kill"),
+			Token:                  viper.GetString("users_service.token"),
+			Timeout:                viper.GetDuration("users_service.timeout"),
+			BackoffCfg: &connection.BackoffConfig{
+				InitialDuration: viper.GetDuration("backoff.init_duration"),
+				MaxDuration:     viper.GetDuration("backoff.max_duration"),
+				Randomization:   viper.GetFloat64("backoff.randomization"),
+				Factor:          viper.GetFloat64("backoff.factor"),
+				MaxInterval:     viper.GetDuration("backoff.max_interval"),
+			},
+		},
 	})
 	if err != nil {
 		log.Fatalf("failed to create game manager: %v\n", err)

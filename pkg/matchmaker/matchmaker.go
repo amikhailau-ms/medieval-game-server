@@ -105,8 +105,7 @@ func (s *MatchmakerServer) CheckMatchmakeStatus(ctx context.Context, req *mpb.Ch
 	if !found {
 		logger.Info("Player has not been matchmaked yet")
 		return &mpb.CheckMatchmakeStatusResponse{
-			Ready:  false,
-			Failed: true,
+			Ready: false,
 		}, nil
 	}
 
@@ -126,9 +125,11 @@ func (s *MatchmakerServer) CheckMatchmakeStatus(ctx context.Context, req *mpb.Ch
 	s.Unlock()
 
 	return &mpb.CheckMatchmakeStatusResponse{
-		Ready: true,
-		Ip:    trMatchInfo.IP,
-		Port:  trMatchInfo.Port,
+		Ready:         true,
+		Ip:            trMatchInfo.IP,
+		Port:          trMatchInfo.Port,
+		NotMatchmaked: false,
+		Failed:        false,
 	}, nil
 }
 
@@ -193,6 +194,9 @@ func (s *MatchmakerServer) checkIfLobbyFits(logger *logrus.Logger) {
 			alloc, err = allocation.AllocateGameServer(s.cfg.AgonesClient)
 			if err != nil {
 				logger.Errorf("Allocation of game server failed: %v", err)
+				for _, player := range playersInLobby {
+					s.matchData.Set(UserPrefix+player.UserId, "no-match-happened", s.cfg.MatchKeep)
+				}
 				return
 			}
 		}

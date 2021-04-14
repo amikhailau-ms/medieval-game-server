@@ -24,16 +24,24 @@ type GameSessionConfig struct {
 	DefaultWeapon       *pb.EquipmentItem
 }
 
+type KillInfo struct {
+	Actor    string
+	Receiver string
+}
+
 type GameSession struct {
 	sync.RWMutex
-	unmovableEntities []collision2d.Polygon
-	sortedEntities    []SortedEntity
-	PrevGameStates    []PrevGameState
-	GameState         CurrentGameState
-	cfg               *GameSessionConfig
-	mapBorderX        float32
-	mapBorderY        float32
-	MapDesc           MapDescription
+	unmovableEntities   []collision2d.Polygon
+	sortedEntities      []SortedEntity
+	PrevGameStates      []PrevGameState
+	GameState           CurrentGameState
+	AttackNotifications chan int32
+	KillNotifications   chan KillInfo
+	deadPlayers         chan int32
+	cfg                 *GameSessionConfig
+	mapBorderX          float32
+	mapBorderY          float32
+	MapDesc             MapDescription
 }
 
 type SortedEntity struct {
@@ -55,12 +63,14 @@ type PrevGameState struct {
 }
 
 type CurrentGameState struct {
-	Players []*SyncPlayer
-	Items   []*SyncItem
+	PlayersLeft int
+	Players     []*SyncPlayer
+	Items       []*SyncItem
 }
 
 type SyncPlayer struct {
 	PlayerInfo *pb.Player
+	Position   int
 	sync.Mutex
 }
 
@@ -134,18 +144,23 @@ func NewGameSession(cfg *GameSessionConfig, mapFilename string) (*GameSession, e
 				Position:  &pb.Vector{X: mapDesc.PlayerSpawns[i*2], Y: mapDesc.PlayerSpawns[i*2+1]},
 				Angle:     math.Pi / 2,
 				PlayerId:  int32(i),
+				Stats:     &pb.PlayerStats{},
 			},
+			Position: 0,
 		}
 		players = append(players, player)
 	}
 
 	gameSession := &GameSession{
-		GameState:         CurrentGameState{Items: items, Players: players},
-		cfg:               cfg,
-		unmovableEntities: unmovableEntities,
-		sortedEntities:    sortedEntities,
-		mapBorderX:        mapDesc.MapBorderX,
-		mapBorderY:        mapDesc.MapBorderY,
+		GameState:           CurrentGameState{Items: items, Players: players, PlayersLeft: cfg.PlayerCount},
+		cfg:                 cfg,
+		unmovableEntities:   unmovableEntities,
+		sortedEntities:      sortedEntities,
+		mapBorderX:          mapDesc.MapBorderX,
+		mapBorderY:          mapDesc.MapBorderY,
+		AttackNotifications: make(chan int32, cfg.PlayerCount*2),
+		KillNotifications:   make(chan KillInfo, cfg.PlayerCount),
+		deadPlayers:         make(chan int32, cfg.PlayerCount),
 	}
 	return gameSession, nil
 }

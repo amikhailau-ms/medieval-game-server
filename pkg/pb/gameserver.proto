@@ -67,6 +67,11 @@ message Vector {
     float y = 2;
 }
 
+message PlayerStats {
+    int32 damage = 1;
+    int32 kills = 2;
+}
+
 message Player {
     string nickname = 1;
     int32 hp = 2;
@@ -75,11 +80,13 @@ message Player {
     Vector position = 5;
     float angle = 6;
     int32 player_id = 7;
+    PlayerStats stats = 8;
 }
 
 message GameState {
     repeated Player players = 1;
     repeated DroppedEquipmentItem dropped_items = 2;
+    int32 players_left = 3;
 }
 
 message Action {

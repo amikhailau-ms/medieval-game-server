@@ -138,7 +138,9 @@ func MakeTestGameSession() (*GameSession, error) {
 			Angle:     math.Pi / 2,
 			PlayerId:  0,
 			Equipment: &pb.PlayerEquipment{Weapon: defaultWeapon.Deepcopy()},
+			Stats:     &pb.PlayerStats{},
 		},
+		Position: 0,
 	}
 	enemy1 := &SyncPlayer{
 		PlayerInfo: &pb.Player{
@@ -149,7 +151,9 @@ func MakeTestGameSession() (*GameSession, error) {
 			Angle:     math.Pi / 2,
 			PlayerId:  1,
 			Equipment: &pb.PlayerEquipment{Weapon: defaultWeapon.Deepcopy()},
+			Stats:     &pb.PlayerStats{},
 		},
+		Position: 0,
 	}
 	enemy2 := &SyncPlayer{
 		PlayerInfo: &pb.Player{
@@ -160,7 +164,9 @@ func MakeTestGameSession() (*GameSession, error) {
 			Angle:     0,
 			PlayerId:  2,
 			Equipment: &pb.PlayerEquipment{Weapon: defaultWeapon.Deepcopy(), Helmet: helmetEnemy.ItemInfo.Item},
+			Stats:     &pb.PlayerStats{},
 		},
+		Position: 0,
 	}
 	enemy3 := &SyncPlayer{
 		PlayerInfo: &pb.Player{
@@ -171,12 +177,15 @@ func MakeTestGameSession() (*GameSession, error) {
 			Angle:     math.Pi * 3 / 2,
 			PlayerId:  3,
 			Equipment: &pb.PlayerEquipment{Weapon: defaultWeapon.Deepcopy(), Armor: armorEnemy.ItemInfo.Item},
+			Stats:     &pb.PlayerStats{},
 		},
+		Position: 0,
 	}
 	players = append(players, player, enemy1, enemy2, enemy3)
 	currentGameState := CurrentGameState{
-		Players: players,
-		Items:   items,
+		Players:     players,
+		Items:       items,
+		PlayersLeft: 4,
 	}
 	prevGameStates := make([]PrevGameState, 0, 10)
 	for i := 0; i < 10; i++ {
@@ -195,10 +204,13 @@ func MakeTestGameSession() (*GameSession, error) {
 			PlayerRadius:        5,
 			DefaultWeapon:       defaultWeapon,
 		},
-		GameState:      currentGameState,
-		PrevGameStates: prevGameStates,
-		mapBorderX:     mapDesc.MapBorderX,
-		mapBorderY:     mapDesc.MapBorderY,
+		GameState:           currentGameState,
+		PrevGameStates:      prevGameStates,
+		mapBorderX:          mapDesc.MapBorderX,
+		mapBorderY:          mapDesc.MapBorderY,
+		AttackNotifications: make(chan int32, 10),
+		KillNotifications:   make(chan KillInfo, 5),
+		deadPlayers:         make(chan int32, 5),
 	}
 	return gameSession, nil
 }

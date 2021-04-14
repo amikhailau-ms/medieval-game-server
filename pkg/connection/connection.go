@@ -2,13 +2,13 @@ package connection
 
 import (
 	"context"
-	"crypto/sha512"
-	"encoding/hex"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -24,6 +24,7 @@ const (
 type GameManagerConfig struct {
 	Gscfg   *gamesession.GameSessionConfig
 	MapFile string
+	Uscfg   *UsersServiceConfig
 }
 
 type ClientConnection struct {
@@ -77,14 +78,48 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 		}
 		gs.PrevGameStates = prevGameStates
 
+		tickDuration := time.Microsecond * time.Duration(1000.0/float64(gm.cfg.Gscfg.TicksPerSecond))
+		ticker := time.NewTicker(tickDuration)
+
 		for {
+			<-ticker.C
 			endGame := gs.DoSessionTick()
 			go gm.BroadcastGameState()
+
+			moreMessages := true
+			for moreMessages {
+				select {
+				case playerId := <-gs.AttackNotifications:
+					go gm.BroadcastNotification(&pb.ServerNotification{
+						Type:  pb.ServerNotificationType_PLAYER_ATTACKED,
+						Actor: strconv.Itoa(int(playerId)),
+					})
+				default:
+					moreMessages = false
+				}
+
+			}
+
+			moreMessages = true
+			for moreMessages {
+				select {
+				case killInfo := <-gs.KillNotifications:
+					go gm.BroadcastNotification(&pb.ServerNotification{
+						Type:     pb.ServerNotificationType_PLAYER_KILLED,
+						Actor:    killInfo.Actor,
+						Receiver: killInfo.Receiver,
+					})
+				default:
+					moreMessages = false
+				}
+
+			}
 			if endGame {
 				break
 			}
 		}
 
+		ticker.Stop()
 		gm.SendResults()
 		gm.FinishChan <- true
 	}()
@@ -106,9 +141,7 @@ func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb
 	}
 	//CHECK THAT THIS USER BELONGS TO THIS SESSION?
 
-	h := sha512.New()
-	h.Write([]byte(userId[0] + time.Now().String()))
-	clientToken := hex.EncodeToString(h.Sum(nil))
+	clientToken := uuid.New().String()
 
 	clientTime, err := ptypes.Timestamp(req.LocalTime)
 	if err != nil {
@@ -161,31 +194,33 @@ func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 	client.streamServer = srv
 
 	go func() {
-		req, err := srv.Recv()
-		if err != nil {
-			client.done <- status.Error(codes.DataLoss, "unable to receive message from client")
-		}
-
-		if not := req.GetNotification(); not != nil {
-			switch not.Type {
-			case pb.NotificationType_DISCONNECT:
-				log.Printf("Player with user id %v has disconnected\n", client.userId)
-				go gm.BroadcastNotification(&pb.ServerNotification{
-					Type:  pb.ServerNotificationType_PLAYER_DISCONNECTED,
-					Actor: client.nickname,
-				})
-				client.done <- status.Error(codes.Aborted, "client requested disconnect")
-			case pb.NotificationType_CONNECT:
-				log.Printf("Player with user id %v has connected\n", client.userId)
-				go gm.BroadcastNotification(&pb.ServerNotification{
-					Type:  pb.ServerNotificationType_PLAYER_CONNECTED,
-					Actor: client.nickname,
-				})
+		for {
+			req, err := srv.Recv()
+			if err != nil {
+				client.done <- status.Error(codes.DataLoss, "unable to receive message from client")
 			}
-		}
 
-		if action := req.GetAction(); action != nil {
-			gm.gs.ProcessAction(action, client.playerId)
+			if not := req.GetNotification(); not != nil {
+				switch not.Type {
+				case pb.NotificationType_DISCONNECT:
+					log.Printf("Player with user id %v has disconnected\n", client.userId)
+					go gm.BroadcastNotification(&pb.ServerNotification{
+						Type:  pb.ServerNotificationType_PLAYER_DISCONNECTED,
+						Actor: client.nickname,
+					})
+					client.done <- status.Error(codes.Aborted, "client requested disconnect")
+				case pb.NotificationType_CONNECT:
+					log.Printf("Player with user id %v has connected\n", client.userId)
+					go gm.BroadcastNotification(&pb.ServerNotification{
+						Type:  pb.ServerNotificationType_PLAYER_CONNECTED,
+						Actor: client.nickname,
+					})
+				}
+			}
+
+			if action := req.GetAction(); action != nil {
+				gm.gs.ProcessAction(action, client.playerId)
+			}
 		}
 	}()
 
@@ -203,10 +238,6 @@ func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 
 	client.streamServer = nil
 	return nil
-}
-
-func (gm *GameManager) SendResults() {
-	//NEED TO ADD STATS TO THE GAME
 }
 
 func (gm *GameManager) BroadcastNotification(not *pb.ServerNotification) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/amikhailau/medieval-game-server/pkg/allocation"
 	"github.com/amikhailau/medieval-game-server/pkg/pb"
@@ -40,9 +41,11 @@ func main() {
 		context.Background(),
 		metadata.Pairs(UserIDHeader, TestUserID),
 	)
+	time, _ := ptypes.TimestampProto(time.Now())
+
 	resp, err := client.Connect(ctx, &pb.ConnectRequest{
 		UserId:    TestUserID,
-		LocalTime: ptypes.TimestampNow(),
+		LocalTime: time,
 	})
 	if err != nil {
 		log.Fatalf("unable to send connect request server to test: %v", err)
