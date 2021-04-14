@@ -183,20 +183,36 @@ func TestProcessPlayerScenario(t *testing.T) {
 			}},
 		},
 	}
+
 	gs.ProcessAction(actions[0], 0)
 	gs.DoSessionTick()
+	t.Log("Action #0.")
+
 	gs.ProcessAction(actions[1], 0)
 	if gs.GameState.Players[1].PlayerInfo.Hp < 100 {
 		t.Fatal("Hit on player #1 registered when it should not be - action #1")
 	}
+	checkIfAttackNotificationIsPresent(t, gs, 1)
+	t.Log("Action #1.")
+
 	gs.ProcessAction(actions[2], 0)
 	gs.DoSessionTick()
+	t.Log("Action #2.")
+
 	gs.ProcessAction(actions[3], 0)
 	if gs.GameState.Players[1].PlayerInfo.Hp != 90 {
 		t.Fatal("Hit on player #1 not registered properly - action #3")
 	}
+	if gs.GameState.Players[0].PlayerInfo.Stats.Damage != 10 {
+		t.Fatal("Damage stats for player #0 not updated properly - action #3")
+	}
+	checkIfAttackNotificationIsPresent(t, gs, 3)
+	t.Log("Action #3.")
+
 	gs.ProcessAction(actions[4], 0)
 	gs.DoSessionTick()
+	t.Log("Action #4.")
+
 	gs.ProcessAction(actions[5], 0)
 	if gs.GameState.Players[0].PlayerInfo.Equipment.Weapon.Rarity != pb.EquipmentItemRarity_DEFAULT {
 		t.Fatal("Item picked up when it should not be (player side) - action #5")
@@ -204,8 +220,12 @@ func TestProcessPlayerScenario(t *testing.T) {
 	if gs.GameState.Items[4].pickedUp {
 		t.Fatal("Item picked up when it should not be (item side)- action #5")
 	}
+	t.Log("Action #5.")
+
 	gs.ProcessAction(actions[6], 0)
 	gs.DoSessionTick()
+	t.Log("Action #6.")
+
 	gs.ProcessAction(actions[7], 0)
 	if gs.GameState.Players[0].PlayerInfo.Equipment.Weapon.Rarity != pb.EquipmentItemRarity_COMMON {
 		t.Fatal("Item not picked up when it should be (player side) - action #7")
@@ -213,8 +233,12 @@ func TestProcessPlayerScenario(t *testing.T) {
 	if !gs.GameState.Items[4].pickedUp {
 		t.Fatal("Item picked up when it should not be (item side)- action #7")
 	}
+	t.Log("Action #7.")
+
 	gs.ProcessAction(actions[8], 0)
 	gs.DoSessionTick()
+	t.Log("Action #8.")
+
 	gs.ProcessAction(actions[9], 0)
 	if gs.GameState.Players[2].PlayerInfo.Hp != 60 {
 		t.Fatal("Hit on player #2 not registered properly - action #9")
@@ -222,8 +246,16 @@ func TestProcessPlayerScenario(t *testing.T) {
 	if gs.GameState.Players[3].PlayerInfo.Hp != 65 {
 		t.Fatal("Hit on player #3 not registered properly - action #9")
 	}
+	checkIfAttackNotificationIsPresent(t, gs, 9)
+	if gs.GameState.Players[0].PlayerInfo.Stats.Damage != 35 {
+		t.Fatal("Damage stats for player #0 not updated properly - action #9")
+	}
+	t.Log("Action #9.")
+
 	gs.ProcessAction(actions[10], 0)
 	gs.DoSessionTick()
+	t.Log("Action #10.")
+
 	gs.ProcessAction(actions[11], 0)
 	if gs.GameState.Players[2].PlayerInfo.Hp != 40 {
 		t.Fatal("Hit on player #2 not registered properly - action #11")
@@ -231,8 +263,32 @@ func TestProcessPlayerScenario(t *testing.T) {
 	if gs.GameState.Players[3].PlayerInfo.Hp != 65 {
 		t.Fatal("Hit on player #3 registered when it should not be - action #11")
 	}
+	t.Log("Action #11.")
+
+	for gs.GameState.Players[2].PlayerInfo.Hp > 0 {
+		gs.ProcessAction(actions[11], 0)
+		checkIfAttackNotificationIsPresent(t, gs, 11)
+	}
+	if gs.GameState.Players[0].PlayerInfo.Stats.Damage != 95 {
+		t.Fatal("Damage stat for player #0 not updated properly - action #11 cycle")
+	}
+	gs.DoSessionTick()
+	if gs.GameState.Players[0].PlayerInfo.Stats.Kills != 1 {
+		t.Fatal("Kill stat for player #0 not updated properly - action #11 cycle")
+	}
+	if gs.GameState.Players[2].Position != 4 {
+		t.Fatal("Position stat for player #2 not updated properly - action #11 cycle")
+	}
+	if gs.GameState.PlayersLeft != 3 {
+		t.Fatal("Players left stat not updated properly - action #11 cycle")
+	}
+	checkIfKillNotificationIsPresent(t, gs, 11)
+	t.Log("Action #11 cycle.")
+
 	gs.ProcessAction(actions[12], 0)
 	gs.DoSessionTick()
+	t.Log("Action #12.")
+
 	gs.ProcessAction(actions[13], 0)
 	if gs.GameState.Players[0].PlayerInfo.Equipment.Helmet == nil {
 		t.Fatal("Item not picked up when it should be (player side) - action #13")
@@ -243,8 +299,12 @@ func TestProcessPlayerScenario(t *testing.T) {
 	if !gs.GameState.Items[0].pickedUp {
 		t.Fatal("Item picked up when it should not be (item side)- action #13")
 	}
+	t.Log("Action #13.")
+
 	gs.ProcessAction(actions[14], 0)
 	gs.DoSessionTick()
+	t.Log("Action #14.")
+
 	gs.ProcessAction(actions[15], 0)
 	if gs.GameState.Players[0].PlayerInfo.Equipment.Helmet.Rarity != pb.EquipmentItemRarity_RARE {
 		t.Fatal("Item not picked up when it should be (player side) - action #15")
@@ -261,4 +321,34 @@ func TestProcessPlayerScenario(t *testing.T) {
 	if gs.GameState.Items[0].ItemInfo.Position.X != 47 || gs.GameState.Items[0].ItemInfo.Position.Y != 85 {
 		t.Fatal("Item not dropped where it should be (item side)- action #15")
 	}
+	t.Log("Action #15.")
+}
+
+func checkIfAttackNotificationIsPresent(t *testing.T, gs *GameSession, actionId int) {
+
+	select {
+	case value := <-gs.AttackNotifications:
+		if value != 0 {
+			t.Fatalf("Wrong player id in notification - expected #0, got #%d - action #%d", value, actionId)
+		}
+	default:
+		t.Fatalf("Expected attack notification to be created - action #%v", actionId)
+	}
+
+}
+
+func checkIfKillNotificationIsPresent(t *testing.T, gs *GameSession, actionId int) {
+
+	select {
+	case value := <-gs.KillNotifications:
+		if value.Actor != "player" {
+			t.Fatalf("Wrong actor nickname in kill notification - expected player, got #%v - action #%v", value.Actor, actionId)
+		}
+		if value.Receiver != "enemy2" {
+			t.Fatalf("Wrong actor nickname in kill notification - expected enemy2, got #%v - action #%v", value.Receiver, actionId)
+		}
+	default:
+		t.Fatalf("Expected kill notification to be created - action #%v", actionId)
+	}
+
 }

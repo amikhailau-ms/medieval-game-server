@@ -74,6 +74,14 @@ func (x *PlayerEquipment) Deepcopy() *PlayerEquipment {
 	return &playerEquipment
 }
 
+func (x *PlayerStats) Deepcopy() *PlayerStats {
+	newStats := &PlayerStats{
+		Kills:  x.Kills,
+		Damage: x.Damage,
+	}
+	return newStats
+}
+
 func (x *Player) Deepcopy() *Player {
 	var newEquipment *PlayerEquipment
 	if x.Equipment != nil {
@@ -83,6 +91,10 @@ func (x *Player) Deepcopy() *Player {
 	if x.Position != nil {
 		newPosition = x.Position.Deepcopy()
 	}
+	var newStats *PlayerStats
+	if x.Stats != nil {
+		newStats = x.Stats.Deepcopy()
+	}
 	player := Player{
 		Nickname:  x.Nickname,
 		Hp:        x.Hp,
@@ -91,6 +103,7 @@ func (x *Player) Deepcopy() *Player {
 		Position:  newPosition,
 		Angle:     x.Angle,
 		PlayerId:  x.PlayerId,
+		Stats:     newStats,
 	}
 	return &player
 }

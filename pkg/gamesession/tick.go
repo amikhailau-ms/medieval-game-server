@@ -15,7 +15,24 @@ func (g *GameSession) DoSessionTick() bool {
 	players := make([]*pb.Player, 0, g.cfg.PlayerCount)
 	items := make([]*pb.DroppedEquipmentItem, 0, g.cfg.PlayerCount)
 	playersAlive := 0
+
+	moreMessages := true
+	for moreMessages {
+		select {
+		case deadPlayer := <-g.deadPlayers:
+			g.GameState.Players[deadPlayer].Position = g.GameState.PlayersLeft
+			g.GameState.PlayersLeft -= 1
+		default:
+			moreMessages = false
+		}
+
+	}
+
 	for _, player := range g.GameState.Players {
+		if player.Position != 0 {
+			continue
+		}
+		playersAlive++
 		minGotYou := player.PlayerInfo.Position.X - g.cfg.PlayerRadius
 		maxGotYou := player.PlayerInfo.Position.X + g.cfg.PlayerRadius
 		intervals := make(map[int]bool)
@@ -49,9 +66,6 @@ func (g *GameSession) DoSessionTick() bool {
 			player.PlayerInfo.Position.X = g.PrevGameStates[g.cfg.GameStatesSaved-1].Players[int(player.PlayerInfo.PlayerId)].Position.X
 			player.PlayerInfo.Position.Y = g.PrevGameStates[g.cfg.GameStatesSaved-1].Players[int(player.PlayerInfo.PlayerId)].Position.Y
 			break
-		}
-		if player.PlayerInfo.Hp > 0 {
-			playersAlive++
 		}
 		sortedPlayers = append(sortedPlayers, SortedPlayer{playerId: player.PlayerInfo.PlayerId, value: minGotYou, start: true},
 			SortedPlayer{playerId: player.PlayerInfo.PlayerId, value: maxGotYou, start: false})
