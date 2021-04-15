@@ -57,6 +57,7 @@ type SortedPlayer struct {
 }
 
 type PrevGameState struct {
+	PlayersLeft   int
 	SortedPlayers []SortedPlayer
 	Players       []*pb.Player
 	Items         []*pb.DroppedEquipmentItem

@@ -118,6 +118,7 @@ message AttackAction {
 message ConnectRequest {
     string user_id = 1;
     google.protobuf.Timestamp local_time = 2;
+    string nickname = 3;
 }
 
 message ConnectResponse {
@@ -148,6 +149,7 @@ message ServerResponse {
         ServerNotification notification = 1;
         GameState game_state = 2;
     }
+    google.protobuf.Timestamp server_time = 3;
 }
 
 service GameManager {

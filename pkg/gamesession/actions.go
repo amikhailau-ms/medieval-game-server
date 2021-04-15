@@ -8,6 +8,8 @@ import (
 )
 
 func (g *GameSession) ProcessAction(action *pb.Action, playerId int32) {
+	g.RLock()
+	defer g.RUnlock()
 	if player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]; player.Hp <= 0 {
 		return
 	}
@@ -35,8 +37,6 @@ func (g *GameSession) ProcessAction(action *pb.Action, playerId int32) {
 }
 
 func (g *GameSession) processMoveAction(moveAction *pb.MovementAction, playerId int32) {
-	g.RLock()
-	defer g.RUnlock()
 	player := g.GameState.Players[int(playerId)]
 	minGotYou := player.PlayerInfo.Position.X - g.cfg.PlayerRadius
 	maxGotYou := player.PlayerInfo.Position.X + g.cfg.PlayerRadius
@@ -102,8 +102,6 @@ func (g *GameSession) processMoveAction(moveAction *pb.MovementAction, playerId 
 }
 
 func (g *GameSession) processAttackAction(attackAction *pb.AttackAction, playerId int32) {
-	g.RLock()
-	defer g.RUnlock()
 	player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]
 	weapon := player.Equipment.Weapon
 	minGotYou := player.Position.X - weapon.GetWeaponChars().GetRange()
@@ -128,8 +126,6 @@ func (g *GameSession) processAttackAction(attackAction *pb.AttackAction, playerI
 }
 
 func (g *GameSession) processPickUpAction(pickUpAction *pb.PickUpAction, playerId int32) {
-	g.RLock()
-	defer g.RUnlock()
 
 	player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]
 	pItemPrev := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Items[int(pickUpAction.ItemId)]
@@ -174,8 +170,6 @@ func (g *GameSession) processPickUpAction(pickUpAction *pb.PickUpAction, playerI
 }
 
 func (g *GameSession) processDropAction(dropAction *pb.DropAction, playerId int32) {
-	g.RLock()
-	defer g.RUnlock()
 
 	player := g.PrevGameStates[g.cfg.GameStatesSaved-g.cfg.GameStatesShiftBack].Players[int(playerId)]
 
