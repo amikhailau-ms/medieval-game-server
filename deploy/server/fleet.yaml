@@ -1,0 +1,47 @@
+apiVersion: "agones.dev/v1"
+kind: Fleet
+metadata:
+  name: medieval-game-server-fleet
+spec:
+  replicas: 5
+  scheduling: Packed
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    spec:
+      ports:
+      - name: default
+        portPolicy: Dynamic
+        containerPort: 9979
+        protocol: TCP
+      health:
+        initialDelaySeconds: 120
+        periodSeconds: 10
+        failureThreshold: 3
+      # Parameters for game server sidecar
+      sdkServer:
+        logLevel: Info
+        grpcPort: 9357
+        httpPort: 9358
+      # The GameServer's Pod template
+      template:
+        spec:
+          containers:
+          - name: medieval-game-server
+            image: amikhailau/medieval-game-server:latest
+---
+apiVersion: "autoscaling.agones.dev/v1"
+kind: FleetAutoscaler
+metadata:
+  name: fleet-autoscaler-example
+spec:
+  fleetName: fleet-example
+  policy:
+    type: Buffer
+    buffer:
+      bufferSize: 5
+      minReplicas: 5
+      maxReplicas: 100
