@@ -82,7 +82,7 @@ func (g *GameSession) DoSessionTick() bool {
 		items = append(items, item.ItemInfo.Deepcopy())
 	}
 
-	newPrevGameState := PrevGameState{SortedPlayers: sortedPlayers, Players: players, Items: items}
+	newPrevGameState := PrevGameState{SortedPlayers: sortedPlayers, Players: players, Items: items, PlayersLeft: g.GameState.PlayersLeft}
 	g.PrevGameStates = g.PrevGameStates[1:]
 	g.PrevGameStates = append(g.PrevGameStates, newPrevGameState)
 	return false

@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"io"
 	"log"
 	"strconv"
 	"sync"
@@ -18,7 +19,8 @@ import (
 )
 
 const (
-	UserIDMetadata = "User-ID"
+	UserIDMetadata      = "User-ID"
+	AuthorizationHeader = "Token"
 )
 
 type GameManagerConfig struct {
@@ -35,6 +37,7 @@ type ClientConnection struct {
 	userId       string
 	token        string
 	nickname     string
+	sync.RWMutex
 }
 
 type GameManager struct {
@@ -78,7 +81,7 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 		}
 		gs.PrevGameStates = prevGameStates
 
-		tickDuration := time.Microsecond * time.Duration(1000.0/float64(gm.cfg.Gscfg.TicksPerSecond))
+		tickDuration := time.Millisecond * time.Duration(1000.0/float64(gm.cfg.Gscfg.TicksPerSecond))
 		ticker := time.NewTicker(tickDuration)
 
 		for {
@@ -128,7 +131,7 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 }
 
 func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb.ConnectResponse, error) {
-	receiveTime := time.Now()
+	receiveTime := time.Now().UTC()
 
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -143,12 +146,8 @@ func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb
 
 	clientToken := uuid.New().String()
 
-	clientTime, err := ptypes.Timestamp(req.LocalTime)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "Incorrect local time value")
-	}
-
-	if receiveTime.Second()-clientTime.Second() > 1 {
+	clientTime := req.LocalTime.AsTime().UTC()
+	if receiveTime.Sub(clientTime) > 500*time.Millisecond {
 		return nil, status.Error(codes.OutOfRange, "Ping too big")
 	}
 
@@ -159,62 +158,72 @@ func (gm *GameManager) Connect(ctx context.Context, req *pb.ConnectRequest) (*pb
 	defer gm.Unlock()
 
 	newClient := &ClientConnection{
-		lastSeen: receiveTime,
+		lastSeen: time.Now(),
 		playerId: int32(gm.clientCount),
 		userId:   userId[0],
 		token:    clientToken,
 		done:     make(chan error),
+		nickname: req.Nickname,
 	}
 	gm.clients[clientToken] = newClient
+	gm.clientCount++
 
 	return &pb.ConnectResponse{
-		Ping:       ping,
-		Token:      clientToken,
-		ServerTime: ptypes.TimestampNow(),
+		Ping:  ping,
+		Token: clientToken,
 	}, nil
 }
 
 func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 	ctx := srv.Context()
 
-	clientTokenInterface := ctx.Value("Token")
-	if clientTokenInterface == nil {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "No token set")
+	}
+	tokenRaw := md.Get(AuthorizationHeader)
+	if len(tokenRaw) == 0 {
 		return status.Error(codes.Unauthenticated, "No token set")
 	}
 
-	clientToken, ok := clientTokenInterface.(string)
-	if !ok {
-		return status.Error(codes.Unauthenticated, "Invalid token set")
+	_, err := uuid.Parse(tokenRaw[0])
+	if err != nil {
+		return status.Error(codes.Unauthenticated, "Unable to validate token")
 	}
 
-	client, found := gm.clients[clientToken]
+	client, found := gm.clients[tokenRaw[0]]
 	if !found {
 		return status.Error(codes.Unauthenticated, "Invalid token set")
 	}
+	client.Lock()
 	client.streamServer = srv
+	client.Unlock()
 
 	go func() {
+		go gm.BroadcastNotification(&pb.ServerNotification{
+			Type:  pb.ServerNotificationType_PLAYER_CONNECTED,
+			Actor: client.nickname,
+		})
 		for {
 			req, err := srv.Recv()
 			if err != nil {
+				if err == io.EOF {
+					client.done <- status.Error(codes.Aborted, "client disconnected")
+				}
 				client.done <- status.Error(codes.DataLoss, "unable to receive message from client")
 			}
+			client.lastSeen = time.Now().UTC()
 
 			if not := req.GetNotification(); not != nil {
 				switch not.Type {
 				case pb.NotificationType_DISCONNECT:
 					log.Printf("Player with user id %v has disconnected\n", client.userId)
-					go gm.BroadcastNotification(&pb.ServerNotification{
-						Type:  pb.ServerNotificationType_PLAYER_DISCONNECTED,
-						Actor: client.nickname,
-					})
 					client.done <- status.Error(codes.Aborted, "client requested disconnect")
+					break
 				case pb.NotificationType_CONNECT:
 					log.Printf("Player with user id %v has connected\n", client.userId)
-					go gm.BroadcastNotification(&pb.ServerNotification{
-						Type:  pb.ServerNotificationType_PLAYER_CONNECTED,
-						Actor: client.nickname,
-					})
+					gm.startChan <- true
+					continue
 				}
 			}
 
@@ -224,50 +233,62 @@ func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 		}
 	}()
 
-	gm.startChan <- true
-
 	var doneErr error
 	select {
 	case <-ctx.Done():
 		doneErr = ctx.Err()
 	case doneErr = <-client.done:
 	}
-	if doneErr != nil {
+
+	client.Lock()
+	client.streamServer = nil
+	client.Unlock()
+	go gm.BroadcastNotification(&pb.ServerNotification{
+		Type:  pb.ServerNotificationType_PLAYER_DISCONNECTED,
+		Actor: client.nickname,
+	})
+	if doneErr != nil && status.Code(doneErr) != codes.Aborted {
 		return status.Error(codes.Internal, "error occured while processing actions")
 	}
 
-	client.streamServer = nil
 	return nil
 }
 
 func (gm *GameManager) BroadcastNotification(not *pb.ServerNotification) {
+	serverTime := ptypes.TimestampNow()
 	for _, client := range gm.clients {
-		if client.streamServer == nil {
-			continue
+		client.RLock()
+		if client.streamServer != nil {
+			if err := client.streamServer.Send(&pb.ServerResponse{Info: &pb.ServerResponse_Notification{Notification: not}, ServerTime: serverTime}); err != nil {
+				log.Printf("user{id: %v, playerId: %v, nickname: %v} - unable to reach: %v\n", client.userId, client.playerId, client.nickname, err)
+				client.done <- err
+			} else {
+				log.Printf("user{id: %v, playerId: %v, nickname: %v} - received notication: %v\n", client.userId, client.playerId, client.nickname, not.Type)
+			}
 		}
-		if err := client.streamServer.Send(&pb.ServerResponse{Info: &pb.ServerResponse_Notification{Notification: not}}); err != nil {
-			log.Printf("user{id: %v, playerId: %v, nickname: %v} - unable to reach: %v\n", client.userId, client.playerId, client.nickname, err)
-			client.done <- err
-			continue
-		}
-		log.Printf("user{id: %v, playerId: %v, nickname: %v} - received notication: %v\n", client.userId, client.playerId, client.nickname, &not)
+		client.RUnlock()
 	}
 }
 
 func (gm *GameManager) BroadcastGameState() {
+	serverTime := ptypes.TimestampNow()
+	gm.gs.RLock()
 	newGameState := &pb.GameState{
-		Players:      gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack+1].Players,
-		DroppedItems: gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack+1].Items,
+		Players:      gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack].Players,
+		DroppedItems: gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack].Items,
+		PlayersLeft:  int32(gm.gs.PrevGameStates[gm.cfg.Gscfg.GameStatesSaved-gm.cfg.Gscfg.GameStatesShiftBack].PlayersLeft),
 	}
+	gm.gs.RUnlock()
 	for _, client := range gm.clients {
-		if client.streamServer == nil {
-			continue
+		client.RLock()
+		if client.streamServer != nil {
+			if err := client.streamServer.Send(&pb.ServerResponse{Info: &pb.ServerResponse_GameState{GameState: newGameState}, ServerTime: serverTime}); err != nil {
+				log.Printf("user{id: %v, playerId: %v, nickname: %v} - unable to reach: %v\n", client.userId, client.playerId, client.nickname, err)
+				client.done <- err
+			} else {
+				log.Printf("user{id: %v, playerId: %v, nickname: %v} - received game state\n", client.userId, client.playerId, client.nickname)
+			}
 		}
-		if err := client.streamServer.Send(&pb.ServerResponse{Info: &pb.ServerResponse_GameState{GameState: newGameState}}); err != nil {
-			log.Printf("user{id: %v, playerId: %v, nickname: %v} - unable to reach: %v\n", client.userId, client.playerId, client.nickname, err)
-			client.done <- err
-			continue
-		}
-		log.Printf("user{id: %v, playerId: %v, nickname: %v} - received game state\n", client.userId, client.playerId, client.nickname)
+		client.RUnlock()
 	}
 }
