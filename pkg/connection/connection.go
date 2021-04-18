@@ -48,6 +48,7 @@ type GameManager struct {
 	clients     map[string]*ClientConnection
 	clientCount int
 	startChan   chan bool
+	gameOngoing bool
 	sync.Mutex
 }
 
@@ -70,6 +71,11 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 		for i := 0; i < cfg.Gscfg.PlayerCount; i++ {
 			<-gm.startChan
 		}
+
+		gm.gameOngoing = true
+		go gm.BroadcastNotification(&pb.ServerNotification{
+			Type: pb.ServerNotificationType_GAME_STARTED,
+		})
 
 		for _, client := range gm.clients {
 			gs.SetPlayerInfo(client.nickname, client.userId, client.playerId)
@@ -123,6 +129,9 @@ func NewGameManager(cfg *GameManagerConfig) (*GameManager, error) {
 		}
 
 		ticker.Stop()
+		go gm.BroadcastNotification(&pb.ServerNotification{
+			Type: pb.ServerNotificationType_GAME_FINISHED,
+		})
 		gm.SendResults()
 		gm.FinishChan <- true
 	}()
@@ -227,8 +236,10 @@ func (gm *GameManager) Talk(srv pb.GameManager_TalkServer) error {
 				}
 			}
 
-			if action := req.GetAction(); action != nil {
-				gm.gs.ProcessAction(action, client.playerId)
+			if gm.gameOngoing {
+				if action := req.GetAction(); action != nil {
+					gm.gs.ProcessAction(action, client.playerId)
+				}
 			}
 		}
 	}()

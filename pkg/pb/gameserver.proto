@@ -31,6 +31,8 @@ enum ServerNotificationType {
     PLAYER_DISCONNECTED = 1;
     PLAYER_KILLED = 2;
     PLAYER_ATTACKED = 3;
+    GAME_STARTED = 4;
+    GAME_FINISHED = 5;
 }
 
 message WeaponCharacteristics {
