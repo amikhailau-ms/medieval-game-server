@@ -55,8 +55,6 @@ var (
 	flagUsersServiceDamageCoins        = pflag.Float64("users_service.currencies.damage", defaultUsersServiceDamageCoins, "users service coins for 1 damage")
 	flagUsersServiceKillCoins          = pflag.Float64("users_service.currencies.kill", defaultUsersServiceKillCoins, "users service coins for 1 kill")
 
-	flagEnableUsersServiceUpdate = pflag.Bool("users_service.enabled", defaultEnableUsersServiceUpdate, "enable  updates")
-
 	flagBackoffInitDuration  = pflag.Duration("backoff.init_duration", defaultBackoffInitialDuration, "initial duration of retry")
 	flagBackoffMaxDuration   = pflag.Duration("backoff.max_duration", defaultBackoffMaxDuration, "initial duration of retry")
 	flagBackoffFactor        = pflag.Float64("backoff.factor", defaultBackoffFactor, "the factor to multiply the previous duration by for the next step in exponential backoff")
