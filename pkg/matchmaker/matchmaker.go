@@ -191,13 +191,23 @@ func (s *MatchmakerServer) checkIfLobbyFits(logger *logrus.Logger) {
 			},
 		}
 		if s.cfg.AgonesClient != nil {
-			alloc, err = allocation.AllocateGameServer(s.cfg.AgonesClient)
-			if err != nil {
-				logger.Errorf("Allocation of game server failed: %v", err)
-				for _, player := range playersInLobby {
-					s.matchData.Set(UserPrefix+player.UserId, "no-match-happened", s.cfg.MatchKeep)
+			retryAllocationTries := 1
+			for retryAllocationTries >= 0 {
+				alloc, err = allocation.AllocateGameServer(s.cfg.AgonesClient)
+				if err != nil {
+					logger.Errorf("Allocation of game server failed: %v", err)
+					retryAllocationTries -= 1
+					if retryAllocationTries >= 0 {
+						time.Sleep(20 * time.Second)
+						continue
+					}
+					for _, player := range playersInLobby {
+						s.matchData.Set(UserPrefix+player.UserId, "no-match-happened", s.cfg.MatchKeep)
+					}
+					return
+				} else {
+					break
 				}
-				return
 			}
 		}
 
