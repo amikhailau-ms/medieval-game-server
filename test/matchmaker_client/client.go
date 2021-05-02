@@ -81,6 +81,7 @@ func main() {
 		}
 		waitGroup.Add(1)
 		go dummyClient(logEntry, client, &waitGroup, id)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	waitGroup.Add(-1)
